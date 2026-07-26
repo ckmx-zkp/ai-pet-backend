@@ -1,0 +1,122 @@
+# 单机部署（阿里云 ecs.u1-c1m4.xlarge 4C16G，Caddy 为唯一入口）。
+# 资源限额按母文档：web-api 0.5C/0.75G、memory-mcp 0.5C/0.75G、agent-worker 1C/2G、
+# postgres 1C/2G、redis 0.5C/0.75G。5432/6379 不暴露宿主机端口。
+# 日志统一 json-file 轮转 50m×5（docs/08 §4）。
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ai_pet
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    expose:
+      - "5432" # 仅容器网络内，不映射宿主机
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ai_pet"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 2G
+    logging: *default-logging
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    expose:
+      - "6379" # 仅容器网络内，不映射宿主机
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 768M
+    logging: *default-logging
+
+  web-api:
+    build: .
+    restart: unless-stopped
+    environment:
+      APP_SERVICE: web-api
+      SERVICE_NAME: web-api
+      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/ai_pet
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?must set JWT_SECRET_KEY}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?must set INTERNAL_SERVICE_TOKEN}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "8000:8000" # 唯一对外 HTTP 端口（前置 Caddy 反代）
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 768M
+    logging: *default-logging
+
+  memory-mcp:
+    build: .
+    restart: unless-stopped
+    environment:
+      APP_SERVICE: memory-mcp
+      SERVICE_NAME: memory-mcp
+      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/ai_pet
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?must set INTERNAL_SERVICE_TOKEN}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    # stdio 传输，不暴露端口；由 xiaozhi-server 经内网挂载
+    depends_on:
+      postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 768M
+    logging: *default-logging
+
+  agent-worker:
+    build: .
+    restart: unless-stopped
+    environment:
+      APP_SERVICE: agent-worker
+      SERVICE_NAME: agent-worker
+      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/ai_pet
+      REDIS_URL: redis://redis:6379/0
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      WORKER_POLL_INTERVAL_SECONDS: "2"
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    # 并发=1 单副本；禁进实时语音路径
+    depends_on:
+      postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 2G
+    logging: *default-logging
+
+volumes:
+  pgdata:

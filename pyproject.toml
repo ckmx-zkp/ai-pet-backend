@@ -1,0 +1,70 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ai-pet-backend"
+version = "0.1.0"
+description = "ESP32 AI 宠物业务后端 monorepo：web-api / memory-mcp / agent-worker / persona-compiler"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115,<1",
+    "uvicorn[standard]>=0.30,<1",
+    "pydantic>=2.7,<3",
+    "pydantic-settings>=2.3,<3",
+    "sqlalchemy[asyncio]>=2.0,<3",
+    "asyncpg>=0.29,<1",
+    "alembic>=1.13,<2",
+    "pgvector>=0.3,<1",
+    "PyJWT>=2.8,<3",
+    "structlog>=24.1,<26",
+    "mcp>=1.2,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8,<9",
+    "pytest-asyncio>=0.23,<1",
+    "httpx>=0.27,<1",
+    "ruff>=0.6,<1",
+    "mypy>=1.10,<2",
+]
+
+[project.scripts]
+agent-worker = "agent_worker.__main__:main"
+memory-mcp = "memory_mcp.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = [
+    "src/pet_common",
+    "src/web_api",
+    "src/memory_mcp",
+    "src/agent_worker",
+    "src/persona_compiler",
+]
+
+[tool.ruff]
+target-version = "py311"
+src = ["src", "tests"]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "SIM", "W"]
+
+[tool.mypy]
+python_version = "3.11"
+mypy_path = "src"
+files = ["src", "tests"]
+strict = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+
+[[tool.mypy.overrides]]
+module = ["alembic.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["src"]
+testpaths = ["tests"]
