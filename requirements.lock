@@ -1,7 +1,10 @@
+-e git+https://github.com/ckmx-zkp/ai-pet-backend.git@a2a09a8fad3e9523c27f3cd5c2fb8f97583c51a3#egg=ai_pet_backend
 alembic==1.18.5
 annotated-doc==0.0.4
 annotated-types==0.8.0
 anyio==4.14.2
+argon2-cffi==25.1.0
+argon2-cffi-bindings==25.1.0
 asyncpg==0.31.0
 attrs==26.1.0
 certifi==2026.7.22
@@ -30,6 +33,7 @@ packaging==26.2
 pathspec==1.1.1
 pgvector==0.5.0
 pluggy==1.6.0
+pwdlib==0.3.0
 pycparser==3.0
 pydantic==2.13.4
 pydantic-settings==2.14.2
