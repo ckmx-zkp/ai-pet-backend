@@ -58,8 +58,9 @@ class Device(TimestampMixin, Base):
     __tablename__ = "devices"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    user_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    # 可空：解绑 = user_id 置 NULL（保留行与历史，可重绑），见迁移 0002
+    user_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=True
     )
     device_uid: Mapped[str] = mapped_column(String(64), nullable=False)  # MAC/UUID
     name: Mapped[str | None] = mapped_column(String(128))

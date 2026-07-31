@@ -3,7 +3,7 @@
 红线：发布必须 version++；Agent/Worker 不得直接 UPDATE published 行。
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 from web_api.routers._common import not_implemented
 
@@ -11,7 +11,10 @@ router = APIRouter(prefix="/admin/kb", tags=["admin", "kb"])
 
 
 @router.get("/zodiac")
-async def list_zodiac_entries() -> None:
+async def list_zodiac_entries(
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+) -> None:
     """KB 条目列表。"""
     not_implemented()
 
@@ -35,7 +38,10 @@ async def publish_zodiac_entry(entry_id: int) -> None:
 
 
 @router.get("/feedback")
-async def list_kb_feedback() -> None:
+async def list_kb_feedback(
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+) -> None:
     """KB 反馈候选（kb_feedback_candidates）。"""
     not_implemented()
 
@@ -43,4 +49,10 @@ async def list_kb_feedback() -> None:
 @router.post("/feedback/{candidate_id}/accept")
 async def accept_kb_feedback(candidate_id: int) -> None:
     """合并候选 → 新 published version。"""
+    not_implemented()
+
+
+@router.post("/feedback/{candidate_id}/ignore")
+async def ignore_kb_feedback(candidate_id: int) -> None:
+    """忽略候选：不合并，关闭该候选（pending → ignored）。"""
     not_implemented()

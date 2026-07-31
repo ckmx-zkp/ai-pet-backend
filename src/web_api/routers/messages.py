@@ -15,7 +15,8 @@ async def list_messages(
     device_id: int,
     from_: str | None = Query(default=None, alias="from"),
     to: str | None = Query(default=None),
-    limit: int = Query(default=20, le=100),  # 分页强制 limit，上限 100
+    limit: int = Query(default=20, ge=1, le=100),  # 分页强制 limit，上限 100
+    offset: int = Query(default=0, ge=0),
 ) -> None:
     """脱敏历史：按设备 + 时间窗 + limit。"""
     not_implemented()

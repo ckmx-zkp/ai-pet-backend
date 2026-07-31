@@ -8,7 +8,12 @@ router = APIRouter(prefix="/devices/{device_id}", tags=["analyses"])
 
 
 @router.get("/analyses")
-async def list_analyses(device_id: int, kind: str | None = Query(default=None)) -> None:
+async def list_analyses(
+    device_id: int,
+    kind: str | None = Query(default=None),
+    limit: int = Query(default=20, ge=1, le=100),  # 分页强制 limit，上限 100
+    offset: int = Query(default=0, ge=0),
+) -> None:
     """分析结果：日摘要/情绪标签/记忆候选/人设契合/运势小记（kind 见 docs/04）。"""
     not_implemented()
 
