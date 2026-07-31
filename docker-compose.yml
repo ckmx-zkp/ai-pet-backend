@@ -63,7 +63,7 @@ services:
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?must set INTERNAL_SERVICE_TOKEN}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     ports:
-      - "8000:8000" # 唯一对外 HTTP 端口（前置 Caddy 反代）
+      - "8010:8000" # 宿主机 8010（8000/8002/8003 已被 xiaozhi-server 占用）；后续 Caddy 反代到此
     depends_on:
       postgres:
         condition: service_healthy
