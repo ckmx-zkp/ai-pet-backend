@@ -31,6 +31,7 @@
 | [docs/06-HTTP-API规范.md](./docs/06-HTTP-API规范.md) | 对外 API 清单 |
 | [docs/07-开发任务清单.md](./docs/07-开发任务清单.md) | backlog |
 | [docs/08-技术栈选型决策.md](./docs/08-技术栈选型决策.md) | 技术栈决策与依据（vibe coding 前提） |
+| [docs/09-部署进度与运维.md](./docs/09-部署进度与运维.md) | 服务器、端口分配、部署状态与运维命令 |
 
 ## 与小智服务的关系
 
