@@ -22,6 +22,13 @@ class Settings(BaseSettings):
 
     internal_service_token: str = "change-me-internal"
 
+    # CORS 允许来源（逗号分隔）；默认放本地 Vite 开发端口，生产配管理台域名
+    cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
     llm_api_key: str = ""
 
     worker_poll_interval_seconds: float = 2.0

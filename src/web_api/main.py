@@ -1,6 +1,7 @@
 """FastAPI 应用工厂。路由前缀 /api，路径契约见 docs/06。"""
 
 from fastapi import Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from pet_common.config import get_settings
 from pet_common.logging import configure_logging
@@ -25,6 +26,14 @@ def create_app() -> FastAPI:
 
     app = FastAPI(title="ai-pet-backend web-api", version="0.1.0")
     app.add_middleware(TraceLoggingMiddleware)
+    # CORS：管理台（ai-pet-admin）跨源调用放行，白名单走 CORS_ORIGINS 环境变量
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origin_list,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
