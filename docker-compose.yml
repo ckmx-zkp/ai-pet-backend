@@ -79,6 +79,10 @@ services:
   memory-mcp:
     build: .
     restart: unless-stopped
+    # stdio 传输，不暴露端口；由 xiaozhi-server 经内网挂载
+    # stdin_open+tty 保持 stdio MCP server 在容器内常驻（无 stdin 会立即退出）
+    stdin_open: true
+    tty: true
     environment:
       APP_SERVICE: memory-mcp
       SERVICE_NAME: memory-mcp
