@@ -15,6 +15,7 @@ from pet_common.models import (
     AuditLog,
     Device,
     DevicePeripheralState,
+    Memory,
     PersonaProfile,
 )
 from web_api.persona_service import get_mbti_entry, get_profile, get_zodiac_entry
@@ -53,6 +54,18 @@ class AnalysisResponse(BaseModel):
     kind: str
     payload: dict[str, Any]
     created_at: datetime
+
+
+class AdminMemoryResponse(BaseModel):
+    id: int
+    device_id: int
+    title: str | None
+    content: str
+    status: str
+    source: str
+    tags: list[str]
+    created_at: datetime
+    updated_at: datetime
 
 
 def _to_device_response(device: Device) -> AdminDeviceResponse:
@@ -216,6 +229,73 @@ async def list_admin_messages(
         )
         for item in messages
     ]
+
+
+@router.get("/{device_id}/memories", response_model=list[AdminMemoryResponse])
+async def list_admin_memories(
+    device_id: int,
+    session: SessionDep,
+    q: str | None = Query(default=None, max_length=200),
+    status_: str | None = Query(default=None, alias="status", max_length=16),
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+) -> list[AdminMemoryResponse]:
+    await _get_device(session, device_id)
+    statement = select(Memory).where(Memory.device_id == device_id)
+    if q:
+        pattern = f"%{q.strip()}%"
+        statement = statement.where(or_(Memory.title.ilike(pattern), Memory.content.ilike(pattern)))
+    if status_:
+        statement = statement.where(Memory.status == status_)
+    rows = (
+        (
+            await session.execute(
+                statement.order_by(Memory.created_at.desc()).limit(limit).offset(offset)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return [AdminMemoryResponse.model_validate(row, from_attributes=True) for row in rows]
+
+
+async def _admin_review_memory(
+    device_id: int, memory_id: int, outcome: str, session: AsyncSession
+) -> AdminMemoryResponse:
+    await _get_device(session, device_id)
+    row = await session.scalar(
+        select(Memory).where(Memory.id == memory_id, Memory.device_id == device_id)
+    )
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="memory not found")
+    if row.status != "candidate":
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="memory is not a candidate")
+    row.status = outcome
+    session.add(
+        AuditLog(
+            actor="admin",
+            action=f"memory_{outcome}",
+            target_type="memory",
+            target_id=str(row.id),
+            detail={},
+        )
+    )
+    await session.commit()
+    return AdminMemoryResponse.model_validate(row, from_attributes=True)
+
+
+@router.post("/{device_id}/memories/{memory_id}/approve", response_model=AdminMemoryResponse)
+async def approve_admin_memory(
+    device_id: int, memory_id: int, session: SessionDep
+) -> AdminMemoryResponse:
+    return await _admin_review_memory(device_id, memory_id, "active", session)
+
+
+@router.post("/{device_id}/memories/{memory_id}/reject", response_model=AdminMemoryResponse)
+async def reject_admin_memory(
+    device_id: int, memory_id: int, session: SessionDep
+) -> AdminMemoryResponse:
+    return await _admin_review_memory(device_id, memory_id, "rejected", session)
 
 
 @router.get("/{device_id}/peripheral", response_model=PeripheralResponse)

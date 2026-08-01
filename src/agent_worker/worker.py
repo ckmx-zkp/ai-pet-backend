@@ -6,10 +6,12 @@
 """
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from agent_worker.llm import LLMUnavailableError
 from agent_worker.tasks import TASK_REGISTRY
 from pet_common.config import Settings
 from pet_common.db import get_session_factory
@@ -48,6 +50,13 @@ async def _process_one() -> bool:
             return True
         try:
             await handler(task.payload, session)
+        except LLMUnavailableError as exc:
+            # API 尚未配置时不消耗重试次数，也不把未来可处理的数据永久标为 failed。
+            task.status = "pending"
+            task.attempts -= 1
+            task.run_at = datetime.now(UTC) + timedelta(minutes=10)
+            task.last_error = str(exc)[:2000]
+            log.info("task_deferred_llm_unavailable", task_id=task.id, kind=task.kind)
         except Exception as exc:  # noqa: BLE001 — worker 必须兜住所有异常，不能炸循环
             task.status = "failed" if task.attempts >= task.max_attempts else "pending"
             task.last_error = str(exc)[:2000]

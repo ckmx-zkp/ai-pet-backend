@@ -110,6 +110,7 @@ KB 条目遵循不可变发布：`POST /admin/kb/zodiac`、`POST /admin/kb/mbti`
 | POST | `/devices/{id}/memories/{mid}/approve` | 候选通过（candidate → active） |
 | POST | `/devices/{id}/memories/{mid}/reject` | 候选驳回（candidate → rejected；写审计） |
 | GET | `/devices/{id}/analyses?kind=&limit&offset` | 分析结果 |
+| POST | `/devices/{id}/analyses/{aid}/apply-persona-growth` | 将 `persona_growth` 建议合并到该设备私有 `overrides`，写审计 |
 | GET | `/devices/{id}/peripheral` | 外设快照 |
 | POST | `/devices/{id}/export` | 导出（建议 V0.2） |
 

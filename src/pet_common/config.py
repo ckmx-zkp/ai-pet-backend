@@ -30,6 +30,13 @@ class Settings(BaseSettings):
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
     llm_api_key: str = ""
+    # OpenAI-compatible Chat Completions endpoint, supplied only in deployment .env.
+    llm_base_url: str = ""
+    llm_model: str = ""
+    llm_timeout_seconds: float = 20.0
+    # Development may let the worker apply an LLM-reviewed private persona suggestion.
+    # Keep false by default: enabling it is an explicit deployment decision.
+    llm_auto_apply_persona_growth: bool = False
 
     worker_poll_interval_seconds: float = 2.0
 

@@ -1,0 +1,22 @@
+"""LLM worker 的纯函数约束：响应必须是 JSON，避免把模型自然语言直接入库。"""
+
+import pytest
+
+from agent_worker.llm import _extract_json
+from agent_worker.tasks import _confidence, _text_list
+
+
+def test_extract_llm_json_object_and_markdown_fence() -> None:
+    assert _extract_json('{"daily_summary": {}}') == {"daily_summary": {}}
+    assert _extract_json('```json\n{"memory_candidates": []}\n```') == {"memory_candidates": []}
+
+
+def test_extract_llm_json_rejects_non_object() -> None:
+    with pytest.raises(ValueError):
+        _extract_json("[]")
+
+
+def test_worker_normalizes_untrusted_llm_values() -> None:
+    assert _confidence(3) == 1.0
+    assert _confidence("high") == 0.0
+    assert _text_list(["  follow up  ", 1, "", "topic"], maximum=1) == ["follow up"]
