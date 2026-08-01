@@ -19,15 +19,38 @@ xiaozhi 未接入前恒为 `false`。
 
 ## 用户与设备
 
+### 设备身份与归属（钉死）
+
+- `device_uid`：设备硬件核心标识，即规范化 MAC/SN；仅供设备、小智与服务间接口使用，
+  全局唯一，**不是** app 的绑定凭据。
+- `devices.id`：后端平台管理 ID，仅作服务端关系主键与管理端运维定位；app 不得以连续数字
+  ID 申请设备归属。
+- `binding_id`：后端在首次见到 `device_uid` 时生成的独立、不连续、不可猜测绑定标识
+  （UUID/随机码，适合二维码）；app 仅用它发起认领。它与 MAC 和平台管理 ID 均独立。
+- `devices.user_id` 仅表示当前 app 用户归属。admin 不得调用用户绑定接口、不得占用该字段；
+  管理台设备登记/诊断使用独立 `/admin/devices/*` 接口（后续 Epic），不改变用户归属。
+
+绑定流程：小智 `devices/seen` 以 MAC 建立未认领设备 → 后端分配 `binding_id` → app 扫码/输入
+`binding_id` → 后端写入 `devices.user_id`。解绑仅将 `user_id` 置空，`binding_id` 与历史保留。
+
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | POST | `/auth/login` | 登录 |
 | POST | `/auth/register` | 注册（若开放） |
 | GET | `/devices?limit&offset` | 当前用户设备列表（名称/在线/固件版本/capabilities） |
-| POST | `/devices/bind` | 绑定 device_uid（已绑定中冲突 409；已解绑设备执行重绑，保留原行与历史；写审计） |
+| POST | `/devices/bind` | 以 `binding_id` 认领设备；已认领冲突 409；admin 调用 403；已解绑设备可重绑，保留原行与历史并写审计 |
 | GET | `/devices/{id}` | 详情/能力/在线；越权访问他人或已解绑设备返回 404（不泄露存在性） |
 | PATCH | `/devices/{id}` | 改名（`name`） |
 | DELETE | `/devices/{id}` | 解绑：`user_id` 置空、历史数据保留、device_uid 可重绑（写审计） |
+
+### `POST /devices/bind` 请求
+
+```json
+{"binding_id": "7b8d5c9e4bc94d47a244d4e6ff0c24e2", "name": "小白"}
+```
+
+`binding_id` 未找到返回 404；已被任一用户认领返回 409；仅 `role=user` 可调用，admin
+返回 403。后端不会由此接口新建设备资产。
 
 ## 人设与知识库
 
@@ -64,7 +87,7 @@ xiaozhi 未接入前恒为 `false`。
 | POST | `/internal/chat/events` | 旁路消息（脱敏落库） |
 | POST | `/internal/peripheral/events` | 外设事件（单行覆盖写） |
 | POST | `/internal/chat/sessions/{id}/end` | 触发摘要入队（幂等） |
-| POST | `/internal/devices/seen` | 设备首见登记/活跃上报 |
+| POST | `/internal/devices/seen` | 设备首见登记/活跃上报；首次见到 MAC 时分配 app `binding_id` |
 
 ### `persona_pack` 响应 schema（钉死 7 字段）
 
@@ -124,9 +147,10 @@ body 支持单条对象或对象数组（批量）。**脱敏由 backend 落库�
 {"device_uid": "aa:bb:cc:dd:ee:ff", "firmware_version": "1.2.3", "capabilities": {"screen": true}}
 ```
 
-设备首见登记：`device_uid` 不存在则建行（`user_id=NULL` 待认领，与 `/devices/bind` 重绑逻辑兼容）；
+设备首见登记：`device_uid` 不存在则建行（`user_id=NULL` 待认领，同时生成独立的 app
+`binding_id`，与 `/devices/bind` 重绑逻辑兼容）；
 已存在则更新 `online_at` 及可选字段（`firmware_version`/`capabilities`，仅提供时更新）。
-响应：`{"id": 1, "device_uid": "...", "created": true|false}`。
+响应：`{"id": 1, "device_uid": "...", "binding_id": "...", "created": true|false}`。
 
 ## 错误约定
 

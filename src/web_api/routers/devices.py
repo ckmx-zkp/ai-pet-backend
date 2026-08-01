@@ -1,7 +1,8 @@
-"""设备域：绑定/列表/详情/改名/解绑（docs/06 §用户与设备）。
+"""设备域：app 认领/列表/详情/改名/解绑（docs/06 §用户与设备）。
 
 安全约束（AGENTS.md 红线 + docs/06）：
 - 详情/改名/解绑对「他人设备」与「已解绑设备」一律 404，不泄露设备存在性；
+- app 仅以不可猜测的 binding_id 认领设备；admin 不得占用用户归属；
 - 绑定/解绑写 audit_logs；
 - 解绑 = user_id 置 NULL（迁移 0002 起）：保留 devices 行与全部历史，
   device_uid 可重绑（bind 时 UPDATE 回原行）；
@@ -31,8 +32,8 @@ _ONLINE_THRESHOLD = timedelta(minutes=5)
 
 
 class BindRequest(BaseModel):
-    device_uid: Annotated[
-        str, StringConstraints(min_length=4, max_length=64, strip_whitespace=True)
+    binding_id: Annotated[
+        str, StringConstraints(min_length=16, max_length=64, strip_whitespace=True)
     ]
     name: Annotated[str | None, StringConstraints(max_length=128, strip_whitespace=True)] = None
 
@@ -53,6 +54,11 @@ class DeviceResponse(BaseModel):
 
 async def _find_device_by_uid(session: AsyncSession, device_uid: str) -> Device | None:
     result = await session.execute(select(Device).where(Device.device_uid == device_uid))
+    return result.scalar_one_or_none()
+
+
+async def _find_device_by_binding_id(session: AsyncSession, binding_id: str) -> Device | None:
+    result = await session.execute(select(Device).where(Device.binding_id == binding_id))
     return result.scalar_one_or_none()
 
 
@@ -123,32 +129,22 @@ def _to_response(device: Device) -> DeviceResponse:
 async def bind_device(
     payload: BindRequest, claims: ClaimsDep, session: SessionDep
 ) -> DeviceResponse:
-    """绑定 device_uid 到当前用户；已绑定中（本人或他人）409；写审计。
+    """以 binding_id 认领设备；已绑定中（本人或他人）409；写审计。
 
-    已解绑（user_id 为 NULL）的同 device_uid 设备执行重绑：UPDATE 回原行，
+    已解绑（user_id 为 NULL）的同 binding_id 设备执行重绑：UPDATE 回原行，
     保留设备 id 与全部历史；payload 带 name 时一并更新。
     """
+    if claims.get("role") != "user":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="user binding only")
     user_id = _current_user_id(claims)
-    existing = await _find_device_by_uid(session, payload.device_uid)
-    if existing is not None:
-        if existing.user_id is not None:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT, detail="device_uid already bound"
-            )
-        existing.user_id = user_id
-        if payload.name is not None:
-            existing.name = payload.name
-        _audit(session, user_id, "device_bind", existing)
-        await session.commit()
-        return _to_response(existing)
-    device = Device(
-        user_id=user_id,
-        device_uid=payload.device_uid,
-        name=payload.name,
-        capabilities={},
-    )
-    session.add(device)
-    await session.flush()  # 取自增 id
+    device = await _find_device_by_binding_id(session, payload.binding_id)
+    if device is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="binding_id not found")
+    if device.user_id is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="device already bound")
+    device.user_id = user_id
+    if payload.name is not None:
+        device.name = payload.name
     _audit(session, user_id, "device_bind", device)
     await session.commit()
     return _to_response(device)

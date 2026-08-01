@@ -45,6 +45,7 @@ tests/
 6. 日志不落对话原文，只记元数据（hash/长度）；固定字段 `ts/level/service/trace_id/device_id/session_id/kb_version`。
 7. Agent 工具白名单：`memory.search` / `memory.add` / `memory.forget` 等，**无 shell / SQL / DBA 工具**。
 8. 索引克制：每表 2~3 个；历史类查询走 `(device_id, created_at)` 复合索引短路径；向量只挂 `memories.embedding`。
+9. 设备身份分离：`device_uid`（MAC/SN）仅供设备/小智；`devices.id` 是平台管理主键；app 只能以不可猜测的 `binding_id` 认领。admin 不得调用用户绑定接口或占用 `devices.user_id`。
 
 ## 常用命令
 

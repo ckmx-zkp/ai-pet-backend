@@ -46,31 +46,40 @@ class FakeSession:
         pass
 
 
-def make_token(user_id: int) -> str:
+def make_token(user_id: int, role: str = "user") -> str:
     settings = get_settings()
     now = datetime.now(UTC)
-    claims = {"sub": str(user_id), "role": "user", "iat": now, "exp": now + timedelta(minutes=30)}
+    claims = {"sub": str(user_id), "role": role, "iat": now, "exp": now + timedelta(minutes=30)}
     return jwt.encode(claims, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 
-def auth_headers(user_id: int = 1) -> dict[str, str]:
-    return {"Authorization": f"Bearer {make_token(user_id)}"}
+def auth_headers(user_id: int = 1, role: str = "user") -> dict[str, str]:
+    return {"Authorization": f"Bearer {make_token(user_id, role)}"}
 
 
-def bind_device(client: TestClient, device_uid: str = "aa:bb:cc:dd:ee:ff") -> Response:
+def bind_device(
+    client: TestClient, binding_id: str = "binding-aabbccddeeff001122334455"
+) -> Response:
     resp: Response = client.post(
-        "/api/devices/bind", json={"device_uid": device_uid}, headers=auth_headers()
+        "/api/devices/bind", json={"binding_id": binding_id}, headers=auth_headers()
     )
     return resp
 
 
 def seed_device(
     store: FakeSession,
-    user_id: int = 1,
+    user_id: int | None = 1,
     device_uid: str = "aa:bb:cc:dd:ee:ff",
     name: str | None = None,
+    binding_id: str = "binding-aabbccddeeff001122334455",
 ) -> Device:
-    device = Device(user_id=user_id, device_uid=device_uid, name=name, capabilities={})
+    device = Device(
+        user_id=user_id,
+        device_uid=device_uid,
+        binding_id=binding_id,
+        name=name,
+        capabilities={},
+    )
     store.add(device)
     return device
 
@@ -82,9 +91,9 @@ def store() -> FakeSession:
 
 @pytest.fixture
 def client(store: FakeSession, monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    async def fake_find_by_uid(session: AsyncSession, device_uid: str) -> Device | None:
+    async def fake_find_by_binding_id(session: AsyncSession, binding_id: str) -> Device | None:
         assert isinstance(session, FakeSession)
-        return next((d for d in session.devices.values() if d.device_uid == device_uid), None)
+        return next((d for d in session.devices.values() if d.binding_id == binding_id), None)
 
     async def fake_list_by_user(
         session: AsyncSession, user_id: int, limit: int, offset: int
@@ -99,7 +108,7 @@ def client(store: FakeSession, monkeypatch: pytest.MonkeyPatch) -> TestClient:
         assert isinstance(session, FakeSession)
         return session.devices.get(device_id)
 
-    monkeypatch.setattr(devices_router, "_find_device_by_uid", fake_find_by_uid)
+    monkeypatch.setattr(devices_router, "_find_device_by_binding_id", fake_find_by_binding_id)
     monkeypatch.setattr(devices_router, "_list_devices_by_user", fake_list_by_user)
     monkeypatch.setattr(devices_router, "_get_device_by_id", fake_get_by_id)
 
@@ -112,9 +121,10 @@ def client(store: FakeSession, monkeypatch: pytest.MonkeyPatch) -> TestClient:
 
 
 def test_bind_success(client: TestClient, store: FakeSession) -> None:
+    seed_device(store, user_id=None, name=None)
     resp = client.post(
         "/api/devices/bind",
-        json={"device_uid": "aa:bb:cc:dd:ee:ff", "name": "小白"},
+        json={"binding_id": "binding-aabbccddeeff001122334455", "name": "小白"},
         headers=auth_headers(),
     )
     assert resp.status_code == 201
@@ -131,18 +141,26 @@ def test_bind_success(client: TestClient, store: FakeSession) -> None:
     assert store.audit_logs[0].target_type == "device"
 
 
-def test_bind_duplicate_409(client: TestClient) -> None:
+def test_bind_duplicate_409(client: TestClient, store: FakeSession) -> None:
+    seed_device(store, user_id=None)
     assert bind_device(client).status_code == 201
     # 同一用户重复绑定 409
     assert bind_device(client).status_code == 409
-    # 他人无法重绑「仍绑定中」的设备：绑定同一 device_uid 409
-    payload = {"device_uid": "aa:bb:cc:dd:ee:ff"}
+    # 他人无法认领「仍绑定中」的设备：同一 binding_id 仍为 409
+    payload = {"binding_id": "binding-aabbccddeeff001122334455"}
     resp = client.post("/api/devices/bind", json=payload, headers=auth_headers(user_id=2))
     assert resp.status_code == 409
 
 
 def test_list_only_own_devices(client: TestClient, store: FakeSession) -> None:
-    seed_device(store, user_id=2, device_uid="11:22:33:44:55:66", name="别人的")
+    seed_device(
+        store,
+        user_id=2,
+        device_uid="11:22:33:44:55:66",
+        name="别人的",
+        binding_id="binding-112233445566001122334455",
+    )
+    seed_device(store, user_id=None)
     bind_device(client)
 
     resp = client.get("/api/devices", headers=auth_headers())
@@ -193,6 +211,7 @@ def test_rename_cross_user_404(client: TestClient, store: FakeSession) -> None:
 
 
 def test_unbind_device(client: TestClient, store: FakeSession) -> None:
+    seed_device(store, user_id=None)
     bind_device(client)
     device = next(iter(store.devices.values()))
 
@@ -207,6 +226,7 @@ def test_unbind_device(client: TestClient, store: FakeSession) -> None:
 
 
 def test_unbound_device_invisible(client: TestClient, store: FakeSession) -> None:
+    seed_device(store, user_id=None)
     bind_device(client)
     device = next(iter(store.devices.values()))
     client.delete(f"/api/devices/{device.id}", headers=auth_headers())
@@ -223,14 +243,15 @@ def test_unbound_device_invisible(client: TestClient, store: FakeSession) -> Non
 
 
 def test_rebind_after_unbind(client: TestClient, store: FakeSession) -> None:
+    seed_device(store, user_id=None)
     bind_device(client)
     device = next(iter(store.devices.values()))
     client.delete(f"/api/devices/{device.id}", headers=auth_headers())
 
-    # 解绑后他人 bind 同一 device_uid → 重绑给新用户：同一行、id 不变、name 可更新
+    # 解绑后他人以同一 binding_id 重绑：同一行、id 不变、name 可更新
     resp = client.post(
         "/api/devices/bind",
-        json={"device_uid": "aa:bb:cc:dd:ee:ff", "name": "新主人的名字"},
+        json={"binding_id": "binding-aabbccddeeff001122334455", "name": "新主人的名字"},
         headers=auth_headers(user_id=2),
     )
     assert resp.status_code == 201
@@ -251,6 +272,7 @@ def test_rebind_after_unbind(client: TestClient, store: FakeSession) -> None:
 
 
 def test_unbind_writes_audit(client: TestClient, store: FakeSession) -> None:
+    seed_device(store, user_id=None)
     bind_device(client)
     device = next(iter(store.devices.values()))
     client.delete(f"/api/devices/{device.id}", headers=auth_headers())
@@ -271,5 +293,17 @@ def test_unbind_cross_user_404(client: TestClient, store: FakeSession) -> None:
 
 def test_devices_without_token_401(client: TestClient) -> None:
     assert client.get("/api/devices").status_code == 401
-    resp = client.post("/api/devices/bind", json={"device_uid": "aa:bb:cc:dd:ee:ff"})
+    resp = client.post(
+        "/api/devices/bind", json={"binding_id": "binding-aabbccddeeff001122334455"}
+    )
     assert resp.status_code == 401
+
+
+def test_admin_cannot_claim_device(client: TestClient, store: FakeSession) -> None:
+    seed_device(store, user_id=None)
+    resp = client.post(
+        "/api/devices/bind",
+        json={"binding_id": "binding-aabbccddeeff001122334455"},
+        headers=auth_headers(role="admin"),
+    )
+    assert resp.status_code == 403

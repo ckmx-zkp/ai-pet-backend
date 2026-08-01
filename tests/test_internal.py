@@ -88,7 +88,12 @@ def internal_headers() -> dict[str, str]:
 def seed_device(
     store: FakeSession, device_uid: str = DEVICE_UID, user_id: int | None = 1
 ) -> Device:
-    device = Device(user_id=user_id, device_uid=device_uid, capabilities={})
+    device = Device(
+        user_id=user_id,
+        device_uid=device_uid,
+        binding_id="binding-aabbccddeeff001122334455",
+        capabilities={},
+    )
     store.add(device)
     return device
 
@@ -330,6 +335,7 @@ def test_device_seen_creates_unclaimed_row(client: TestClient, store: FakeSessio
     body = resp.json()
     assert body["created"] is True
     assert body["device_uid"] == DEVICE_UID
+    assert len(body["binding_id"]) == 32
 
     device = store.devices[body["id"]]
     assert device.user_id is None  # 待认领，E1 bind 重绑兼容
@@ -351,6 +357,7 @@ def test_device_seen_updates_existing(client: TestClient, store: FakeSession) ->
     body = resp.json()
     assert body["created"] is False
     assert body["id"] == device.id
+    assert body["binding_id"] == device.binding_id
     assert len(store.devices) == 1  # 不新增行
 
     assert device.online_at is not None
@@ -382,3 +389,44 @@ def test_internal_endpoints_require_token(client: TestClient) -> None:
         client.post("/api/internal/devices/seen", json={"device_uid": DEVICE_UID}).status_code
         == 401
     )
+
+
+def test_persona_pack_returns_contract_shape(
+    client: TestClient, store: FakeSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    device = seed_device(store)
+    profile = object()
+
+    async def fake_get_profile(session: AsyncSession, device_id: int) -> object | None:
+        assert cast(object, session) is store
+        assert device_id == device.id
+        return profile
+
+    async def fake_compile_profile(session: AsyncSession, value: object) -> dict[str, object]:
+        assert cast(object, session) is store
+        assert value is profile
+        return {
+            "kb_version": 1,
+            "system_prompt_fragments": ["温柔陪伴"],
+            "style_constraints": ["先共情"],
+            "taboo": ["冷暴力"],
+            "default_emotion": "calm",
+            "blink_profile": {"interval_ms": 3200, "duration_ms": 180},
+            "retrieval_hints": ["element_water", "sign_pisces"],
+        }
+
+    monkeypatch.setattr(internal_router, "get_profile", fake_get_profile)
+    monkeypatch.setattr(internal_router, "compile_profile", fake_compile_profile)
+    response = client.get(
+        f"/api/internal/devices/{DEVICE_UID}/persona_pack", headers=internal_headers()
+    )
+    assert response.status_code == 200
+    assert set(response.json()) == {
+        "kb_version",
+        "system_prompt_fragments",
+        "style_constraints",
+        "taboo",
+        "default_emotion",
+        "blink_profile",
+        "retrieval_hints",
+    }

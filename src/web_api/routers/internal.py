@@ -12,6 +12,7 @@ devices 无 last_seen_at 列，online_at 兼作最后活跃镜像（docs/06 §�
 
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, StringConstraints
@@ -27,7 +28,7 @@ from pet_common.models import (
     DevicePeripheralState,
 )
 from pet_common.redaction import redact_text
-from web_api.routers._common import not_implemented
+from web_api.persona_service import compile_profile, get_profile
 
 router = APIRouter(prefix="/internal", tags=["internal"])
 
@@ -73,7 +74,20 @@ class DeviceSeenIn(BaseModel):
 class DeviceSeenResponse(BaseModel):
     id: int
     device_uid: str
+    binding_id: str
     created: bool
+
+
+class PersonaPackResponse(BaseModel):
+    """与 docs/06 钉死的 xiaozhi persona_pack 七字段一致。"""
+
+    kb_version: int
+    system_prompt_fragments: list[str]
+    style_constraints: list[str]
+    taboo: list[str]
+    default_emotion: str
+    blink_profile: dict[str, int]
+    retrieval_hints: list[str]
 
 
 class SessionEndResponse(BaseModel):
@@ -109,10 +123,16 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-@router.get("/devices/{device_uid}/persona_pack")
-async def get_persona_pack(device_uid: str) -> None:
+@router.get("/devices/{device_uid}/persona_pack", response_model=PersonaPackResponse)
+async def get_persona_pack(device_uid: str, session: SessionDep) -> PersonaPackResponse:
     """编译或读缓存的 persona_pack（E2 实现，7 字段 schema 见 docs/06）。"""
-    not_implemented()
+    device = await _find_device_by_uid(session, device_uid)
+    if device is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="device not found")
+    profile = await get_profile(session, device.id)
+    if profile is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="persona not configured")
+    return PersonaPackResponse.model_validate(await compile_profile(session, profile))
 
 
 @router.post("/chat/events", response_model=ChatEventsAccepted)
@@ -215,7 +235,7 @@ async def end_chat_session(session_id: str, session: SessionDep) -> SessionEndRe
 
 @router.post("/devices/seen", response_model=DeviceSeenResponse)
 async def device_seen(payload: DeviceSeenIn, session: SessionDep) -> DeviceSeenResponse:
-    """设备首见登记/活跃上报：不存在则建行（user_id=NULL 待认领）；存在则更新活跃镜像。
+    """设备首见登记/活跃上报：不存在则建行并生成 binding_id；存在则更新活跃镜像。
 
     与 E1 重绑逻辑兼容：user_id 为 NULL 的设备在 POST /devices/bind 时 UPDATE 回原行，
     保留设备 id 与全部历史。
@@ -226,6 +246,7 @@ async def device_seen(payload: DeviceSeenIn, session: SessionDep) -> DeviceSeenR
         device = Device(
             user_id=None,
             device_uid=payload.device_uid,
+            binding_id=uuid4().hex,
             capabilities=payload.capabilities or {},
             firmware_version=payload.firmware_version,
             online_at=now,
@@ -233,11 +254,21 @@ async def device_seen(payload: DeviceSeenIn, session: SessionDep) -> DeviceSeenR
         session.add(device)
         await session.flush()  # 取自增 id
         await session.commit()
-        return DeviceSeenResponse(id=device.id, device_uid=device.device_uid, created=True)
+        return DeviceSeenResponse(
+            id=device.id,
+            device_uid=device.device_uid,
+            binding_id=device.binding_id,
+            created=True,
+        )
     device.online_at = now
     if payload.firmware_version is not None:
         device.firmware_version = payload.firmware_version
     if payload.capabilities is not None:
         device.capabilities = payload.capabilities
     await session.commit()
-    return DeviceSeenResponse(id=device.id, device_uid=device.device_uid, created=False)
+    return DeviceSeenResponse(
+        id=device.id,
+        device_uid=device.device_uid,
+        binding_id=device.binding_id,
+        created=False,
+    )

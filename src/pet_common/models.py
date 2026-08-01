@@ -63,6 +63,8 @@ class Device(TimestampMixin, Base):
         BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=True
     )
     device_uid: Mapped[str] = mapped_column(String(64), nullable=False)  # MAC/UUID
+    # app 认领凭据：独立于 MAC 与连续平台主键，首见设备时生成。
+    binding_id: Mapped[str] = mapped_column(String(64), nullable=False)
     name: Mapped[str | None] = mapped_column(String(128))
     capabilities: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
@@ -72,6 +74,7 @@ class Device(TimestampMixin, Base):
 
     __table_args__ = (
         Index("uq_devices_device_uid", "device_uid", unique=True),
+        Index("uq_devices_binding_id", "binding_id", unique=True),
         Index("ix_devices_user_id", "user_id"),
     )
 
