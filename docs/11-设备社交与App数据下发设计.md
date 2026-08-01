@@ -115,3 +115,42 @@
 
 - 设备离线时人设/记忆仍可编辑——后端 PUT/POST 不校验设备在线，App 自行展示状态条。
 - 分页强制 limit（≤100），App 不无限缓存全量历史。
+
+---
+
+## 3. 人设初始化与下发流程（V0.2）
+
+### 3.1 完整链路
+
+```text
+设备绑定（E1）
+   │ App：GET persona → 未初始化（unset）→ 进入初始化引导
+   ▼
+初始化二选一：
+  A. 做题：MBTI 短问卷 → POST /devices/{id}/persona/questionnaire
+     → backend 按规则算型，写入 persona_profiles.mbti
+  B. 直选：太阳星座 + MBTI + 忌口 → PUT /devices/{id}/persona
+   ▼
+backend：persona_profiles 落库（kb_version 取当前 published，follow_latest 默认开）
+   → PersonaCompiler 编译 → persona_pack 就绪（含 default_emotion、retrieval_hints）
+   │ 拉取式下发：小智在每次会话开始时 GET /internal/devices/{uid}/persona_pack
+   ▼
+xiaozhi-server 缓存 persona_pack → 注入 system prompt → 设备按此人设对话
+```
+
+### 3.2 关键规则
+
+| 规则 | 说明 |
+|------|------|
+| 未初始化兜底 | persona 未设置时，persona_pack 返回**安全默认人设**（温和通用型 + `persona_state: "unset"` 标记），设备开箱即可对话；App 凭此标记弹初始化引导 |
+| 下发方向 | **拉取式**（小智会话开始时拉），backend 不主动推。人设变更后最迟于"下次会话开始"生效——与"人设滞后展现"的设计一致 |
+| 缓存刷新（V0.2 简化） | 小智每次会话开始都重新拉取并覆盖缓存，无需失效通知；主动失效 webhook 列入 V0.3 备选 |
+| 问卷算型 | 问卷→MBTI 的映射规则放 backend（persona-compiler 包），App 只收答案不算型；问卷结果同样可再手动改 |
+| 修改路径 | 初始化后随时 `PUT persona` 修改；每次修改重编译，kb_version 依 follow_latest 策略 |
+
+### 3.3 各端职责
+
+- **App**：初始化引导页（检测 unset → 做题或直选）、人设展示与修改
+- **backend**：问卷算型、persona 存储、编译、persona_pack 下发
+- **小智**：拉取 + 缓存 + 注入，不理解人设内容
+- **固件**：零参与（default_emotion 经小智 MCP 控眼下达到眼睛）
