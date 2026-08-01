@@ -123,6 +123,14 @@ KB 条目遵循不可变发布：`POST /admin/kb/zodiac`、`POST /admin/kb/mbti`
 | POST | `/internal/peripheral/events` | 外设事件（单行覆盖写） |
 | POST | `/internal/chat/sessions/{id}/end` | 触发摘要入队（幂等） |
 | POST | `/internal/devices/seen` | 设备首见登记/活跃上报；首次见到 MAC 时分配 app `binding_id` |
+| GET | `/internal/context/device` | 小智 Context Provider；读取 `device-id` 请求头，返回动态短上下文 `{"code":0,"data":[]}`，未知/未认领设备也空成功降级 |
+
+### `GET /internal/context/device`（小智 C5）
+
+鉴权仍为 `X-Internal-Token`；小智上游自动传 `device-id: {device_uid}`。响应 `data` 最多 6
+条、总计最多约 800 字符，只包含最近 36 小时的 `daily_summary`、可跟进事项及已确认的
+`active` 记忆。稳定角色档案、星座/MBTI、KB 与已应用 overrides 已由 `persona_pack` 注入，
+不得重复返回；接口不得同步调用 LLM、不得返回原始对话、候选记忆、敏感字段或内部 ID。
 
 ### `persona_pack` 响应 schema（钉死 7 字段）
 

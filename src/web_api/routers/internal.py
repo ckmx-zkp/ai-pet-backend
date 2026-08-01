@@ -10,11 +10,11 @@ chat_messages 无 ts 列，事件的 ts 写入 created_at（历史查询索引�
 devices 无 last_seen_at 列，online_at 兼作最后活跃镜像（docs/06 §设备在线状态）。
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field, StringConstraints
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,10 +22,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pet_common.db import get_session
 from pet_common.models import (
     AgentTask,
+    AnalysisResult,
     ChatMessage,
     ChatSession,
     Device,
     DevicePeripheralState,
+    Memory,
 )
 from pet_common.redaction import redact_text
 from web_api.persona_service import compile_profile, get_profile
@@ -96,6 +98,12 @@ class SessionEndResponse(BaseModel):
     task_id: int | None
 
 
+class ContextProviderResponse(BaseModel):
+    code: int = 0
+    msg: str = "success"
+    data: list[str] = Field(default_factory=list)
+
+
 async def _find_device_by_uid(session: AsyncSession, device_uid: str) -> Device | None:
     result = await session.execute(select(Device).where(Device.device_uid == device_uid))
     return result.scalar_one_or_none()
@@ -123,6 +131,69 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
+def _bounded_context(items: list[str]) -> list[str]:
+    """最多 6 条、合计 800 字符；避免把动态上下文做成第二份 persona_pack。"""
+    result: list[str] = []
+    remaining = 800
+    for item in items:
+        clean = " ".join(item.split())[:320]
+        if not clean or remaining <= 0:
+            continue
+        value = clean[:remaining]
+        result.append(value)
+        remaining -= len(value)
+        if len(result) == 6:
+            break
+    return result
+
+
+async def build_device_context(session: AsyncSession, device: Device) -> list[str]:
+    """构造仅含动态内容的 Context Provider 输出。
+
+    静态 dossier、星座/MBTI、KB 和已应用 overrides 已由 persona_pack 承担，禁止在此重复。
+    LLM 只通过 worker 预先生成 daily_summary；本函数不做同步模型调用。
+    """
+    if device.user_id is None:
+        return []
+    items: list[str] = []
+    since = _utcnow() - timedelta(hours=36)
+    summary = await session.scalar(
+        select(AnalysisResult)
+        .where(
+            AnalysisResult.device_id == device.id,
+            AnalysisResult.kind == "daily_summary",
+            AnalysisResult.created_at >= since,
+        )
+        .order_by(AnalysisResult.created_at.desc())
+        .limit(1)
+    )
+    if isinstance(summary, AnalysisResult):
+        text = summary.payload.get("summary")
+        if isinstance(text, str) and text.strip():
+            items.append(f"近期小记：{text}")
+        follow_up = summary.payload.get("follow_up")
+        if isinstance(follow_up, list):
+            prompts = [item.strip() for item in follow_up if isinstance(item, str) and item.strip()]
+            if prompts:
+                items.append("可自然跟进：" + "；".join(prompts[:2]))
+    memories = (
+        (
+            await session.execute(
+                select(Memory)
+                .where(Memory.device_id == device.id, Memory.status == "active")
+                .order_by(Memory.updated_at.desc())
+                .limit(3)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for memory in memories:
+        title = f"{memory.title}：" if memory.title else ""
+        items.append(f"已确认记忆：{title}{memory.content}")
+    return _bounded_context(items)
+
+
 @router.get("/devices/{device_uid}/persona_pack", response_model=PersonaPackResponse)
 async def get_persona_pack(device_uid: str, session: SessionDep) -> PersonaPackResponse:
     """编译或读缓存的 persona_pack（E2 实现，7 字段 schema 见 docs/06）。"""
@@ -133,6 +204,20 @@ async def get_persona_pack(device_uid: str, session: SessionDep) -> PersonaPackR
     if profile is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="persona not configured")
     return PersonaPackResponse.model_validate(await compile_profile(session, profile))
+
+
+@router.get("/context/device", response_model=ContextProviderResponse)
+async def get_device_context(
+    session: SessionDep,
+    device_id: Annotated[str | None, Header(alias="device-id")] = None,
+) -> ContextProviderResponse:
+    """供小智上游 dynamic_context 调用的短上下文；未知/未认领均空成功降级。"""
+    if device_id is None or not (4 <= len(device_id.strip()) <= 64):
+        return ContextProviderResponse()
+    device = await _find_device_by_uid(session, device_id.strip().lower())
+    if device is None:
+        return ContextProviderResponse()
+    return ContextProviderResponse(data=await build_device_context(session, device))
 
 
 @router.post("/chat/events", response_model=ChatEventsAccepted)
