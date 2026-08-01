@@ -61,9 +61,10 @@ xiaozhi 未接入前恒为 `false`。
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/internal/devices/{device_uid}/persona_pack` | 编译或读缓存 |
-| POST | `/internal/chat/events` | 旁路消息 |
-| POST | `/internal/peripheral/events` | 外设事件 |
-| POST | `/internal/chat/sessions/{id}/end` | 触发摘要入队 |
+| POST | `/internal/chat/events` | 旁路消息（脱敏落库） |
+| POST | `/internal/peripheral/events` | 外设事件（单行覆盖写） |
+| POST | `/internal/chat/sessions/{id}/end` | 触发摘要入队（幂等） |
+| POST | `/internal/devices/seen` | 设备首见登记/活跃上报 |
 
 ### `persona_pack` 响应 schema（钉死 7 字段）
 
@@ -83,7 +84,7 @@ xiaozhi 未接入前恒为 `false`。
 
 ```json
 {
-  "device_id": 1,
+  "device_uid": "aa:bb:cc:dd:ee:ff",
   "session_id": 10,
   "role": "user | assistant",
   "content": "...",
@@ -93,6 +94,36 @@ xiaozhi 未接入前恒为 `false`。
 
 body 支持单条对象或对象数组（批量）。**脱敏由 backend 落库前执行**（docs/08 已决）：
 只存 `content_redacted`，原文不落库、不落日志。
+
+- **设备标识统一用 `device_uid`（MAC）**：小智侧只持有 MAC，不知道 backend 自增 id；
+  与 `persona_pack` 路径参数保持一致（本表早先草稿写作 `device_id`，以此为准）。
+- `session_id` 为 xiaozhi 侧会话号：backend 以之作为 `chat_sessions.id`，首次见自动建行；
+  事件的 `ts` 写入 `chat_messages.created_at`（该表无独立 ts 列）。
+- 未知设备 404（批量时任一未知整体不落库）；session 已存在但属于其他设备 404。
+- 响应：`{"accepted": n}`；每批镜像 `devices.online_at`（无 last_seen_at 列，online_at 兼任）。
+
+### `POST /internal/peripheral/events` 请求 schema
+
+```json
+{"device_uid": "aa:bb:cc:dd:ee:ff", "emotion": "happy", "gaze": "center", "closed": false, "extra": {}}
+```
+
+`device_peripheral_state` 一设备一行**全量覆盖写**（未提供的字段清空）；设备不存在 404；响应 204。
+
+### `POST /internal/chat/sessions/{id}/end` 响应
+
+置 `ended_at` 并入队 `agent_tasks`（`kind=daily_summary`，payload 含 `session_id/device_id`，`status=pending`）。
+幂等：已结束的会话重复调用不重复入队。响应：`{"session_id": 10, "ended": true, "task_id": 123}`。
+
+### `POST /internal/devices/seen` 请求/响应
+
+```json
+{"device_uid": "aa:bb:cc:dd:ee:ff", "firmware_version": "1.2.3", "capabilities": {"screen": true}}
+```
+
+设备首见登记：`device_uid` 不存在则建行（`user_id=NULL` 待认领，与 `/devices/bind` 重绑逻辑兼容）；
+已存在则更新 `online_at` 及可选字段（`firmware_version`/`capabilities`，仅提供时更新）。
+响应：`{"id": 1, "device_uid": "...", "created": true|false}`。
 
 ## 错误约定
 
