@@ -1,21 +1,61 @@
-"""GET /devices/{id}/analyses?kind=、POST /devices/{id}/export（docs/06 §历史/记忆/分析）。"""
+"""用户侧分析结果读取与数据导出入口。"""
 
-from fastapi import APIRouter, Query
+from datetime import datetime
+from typing import Annotated, Any
 
+from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from pet_common.db import get_session
+from pet_common.models import AnalysisResult
+from web_api.deps import get_current_claims
 from web_api.routers._common import not_implemented
+from web_api.routers.devices import _current_user_id, _get_own_device
 
 router = APIRouter(prefix="/devices/{device_id}", tags=["analyses"])
+SessionDep = Annotated[AsyncSession, Depends(get_session)]
+ClaimsDep = Annotated[dict[str, Any], Depends(get_current_claims)]
+
+
+class AnalysisResponse(BaseModel):
+    id: int
+    kind: str
+    payload: dict[str, Any]
+    created_at: datetime
+
+
+async def _list_analyses(
+    session: AsyncSession, device_id: int, kind: str | None, limit: int, offset: int
+) -> list[AnalysisResult]:
+    statement = select(AnalysisResult).where(AnalysisResult.device_id == device_id)
+    if kind:
+        statement = statement.where(AnalysisResult.kind == kind)
+    result = await session.execute(
+        statement.order_by(AnalysisResult.created_at.desc()).limit(limit).offset(offset)
+    )
+    return list(result.scalars().all())
 
 
 @router.get("/analyses")
 async def list_analyses(
     device_id: int,
+    claims: ClaimsDep,
+    session: SessionDep,
     kind: str | None = Query(default=None),
     limit: int = Query(default=20, ge=1, le=100),  # 分页强制 limit，上限 100
     offset: int = Query(default=0, ge=0),
-) -> None:
+) -> list[AnalysisResponse]:
     """分析结果：日摘要/情绪标签/记忆候选/人设契合/运势小记（kind 见 docs/04）。"""
-    not_implemented()
+    await _get_own_device(session, device_id, _current_user_id(claims))
+    results = await _list_analyses(session, device_id, kind, limit, offset)
+    return [
+        AnalysisResponse(
+            id=item.id, kind=item.kind, payload=item.payload, created_at=item.created_at
+        )
+        for item in results
+    ]
 
 
 @router.post("/export")
