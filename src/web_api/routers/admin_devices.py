@@ -102,6 +102,19 @@ async def list_admin_devices(
     return [_to_device_response(device) for device in result.scalars().all()]
 
 
+@router.get("/lookup", response_model=AdminDeviceResponse)
+async def lookup_admin_device(
+    session: SessionDep,
+    device_uid: str = Query(min_length=4, max_length=64),
+) -> AdminDeviceResponse:
+    """以设备硬件核心 ID 精确读取资产与 app binding_id。"""
+    result = await session.execute(select(Device).where(Device.device_uid == device_uid))
+    device = result.scalar_one_or_none()
+    if device is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="device not found")
+    return _to_device_response(device)
+
+
 @router.get("/{device_id}", response_model=AdminDeviceResponse)
 async def get_admin_device(device_id: int, session: SessionDep) -> AdminDeviceResponse:
     return _to_device_response(await _get_device(session, device_id))
