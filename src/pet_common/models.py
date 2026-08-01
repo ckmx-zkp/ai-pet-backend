@@ -141,6 +141,10 @@ class PersonaProfile(Base):
     overrides: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )
+    # 稳定角色档案：由用户/Admin 明确维护，不由单次会话 LLM 凭空改写。
+    dossier: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
     compiled_summary: Mapped[dict[str, Any] | None] = mapped_column(JSONB)  # 编译缓存摘要
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False

@@ -119,6 +119,14 @@ def test_put_persona_and_pin_kb_version(client: TestClient, store: FakeSession) 
         "overrides": {"taboo": ["催促"]},
         "follow_latest": False,
         "kb_version": 5,
+            "dossier": {
+                "identity": "",
+                "background": [],
+                "roles": [],
+                "goals": [],
+                "evolution_rules": [],
+                "relationship": "",
+            },
     }
     assert store.profile is not None
     assert store.profile.user_id == 1

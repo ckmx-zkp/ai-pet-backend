@@ -77,7 +77,7 @@ xiaozhi 未接入前恒为 `false`。
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET/PUT | `/devices/{id}/persona` | 读/写星座 MBTI 忌口钉扎 |
+| GET/PUT | `/devices/{id}/persona` | 读/写星座、MBTI、忌口、钉扎与稳定角色档案 `dossier`（身份/背景/角色/目标/进化规则/关系） |
 | POST | `/devices/{id}/persona/questionnaire` | 问卷提交（可选） |
 | GET | `/admin/kb/zodiac?limit&offset` | 列表条目 |
 | POST/PUT | `/admin/kb/zodiac/{id}` | 编辑 draft |

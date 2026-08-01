@@ -19,6 +19,15 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 ClaimsDep = Annotated[dict[str, Any], Depends(get_current_claims)]
 
 
+class PersonaDossier(BaseModel):
+    identity: str = Field(default="", max_length=1200)
+    background: list[str] = Field(default_factory=list, max_length=8)
+    roles: list[str] = Field(default_factory=list, max_length=8)
+    goals: list[str] = Field(default_factory=list, max_length=8)
+    evolution_rules: list[str] = Field(default_factory=list, max_length=8)
+    relationship: str = Field(default="", max_length=600)
+
+
 class PersonaResponse(BaseModel):
     device_id: int
     sun_sign: str | None
@@ -26,6 +35,7 @@ class PersonaResponse(BaseModel):
     overrides: dict[str, Any]
     follow_latest: bool
     kb_version: int | None
+    dossier: PersonaDossier
 
 
 class PersonaPutRequest(BaseModel):
@@ -33,6 +43,7 @@ class PersonaPutRequest(BaseModel):
     mbti: str
     overrides: dict[str, Any] = Field(default_factory=dict)
     follow_latest: bool = True
+    dossier: PersonaDossier = Field(default_factory=PersonaDossier)
 
     @field_validator("sun_sign", mode="before")
     @classmethod
@@ -53,6 +64,7 @@ def _to_response(profile: PersonaProfile) -> PersonaResponse:
         overrides=profile.overrides,
         follow_latest=profile.follow_latest,
         kb_version=profile.kb_version,
+        dossier=PersonaDossier.model_validate(profile.dossier),
     )
 
 
@@ -93,6 +105,7 @@ async def put_persona(
             overrides=payload.overrides,
             follow_latest=payload.follow_latest,
             kb_version=kb_version,
+            dossier=payload.dossier.model_dump(),
         )
         session.add(profile)
     else:
@@ -101,6 +114,7 @@ async def put_persona(
         profile.overrides = payload.overrides
         profile.follow_latest = payload.follow_latest
         profile.kb_version = kb_version
+        profile.dossier = payload.dossier.model_dump()
     await session.commit()
     return _to_response(profile)
 

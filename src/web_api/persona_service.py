@@ -82,6 +82,28 @@ def _retrieval_hints(payloads: Iterable[dict[str, Any]]) -> list[str]:
     return list(dict.fromkeys(hints))
 
 
+def _dossier_fragments(dossier: dict[str, Any]) -> list[str]:
+    """稳定档案转为 prompt 片段；只取用户/Admin 明确保存的字段。"""
+    labels = {
+        "identity": "我是谁",
+        "background": "背景",
+        "roles": "角色",
+        "goals": "目标",
+        "evolution_rules": "进化规则",
+        "relationship": "与主人的关系",
+    }
+    fragments: list[str] = []
+    for key, label in labels.items():
+        value = dossier.get(key)
+        if isinstance(value, str) and value.strip():
+            fragments.append(f"{label}：{value.strip()}")
+        elif isinstance(value, list):
+            items = [item.strip() for item in value if isinstance(item, str) and item.strip()]
+            if items:
+                fragments.append(f"{label}：" + "；".join(items[:8]))
+    return fragments
+
+
 async def compile_profile(session: AsyncSession, profile: PersonaProfile) -> dict[str, Any]:
     """从发布中的 KB 编译固定 7 字段的服务间 persona_pack。"""
     if profile.sun_sign is None or profile.mbti is None:
@@ -100,7 +122,11 @@ async def compile_profile(session: AsyncSession, profile: PersonaProfile) -> dic
         _as_kb_entry(element, "element"),
         _as_kb_entry(sign, "sign"),
         _as_kb_entry(mbti, "mbti"),
-        overrides=profile.overrides,
+        overrides={
+            **profile.overrides,
+            "prompt_fragments": _merge_list([profile.overrides], "prompt_fragments")
+            + _dossier_fragments(profile.dossier),
+        },
     )
     payloads = [element.payload, sign.payload, mbti.payload, profile.overrides]
     return {

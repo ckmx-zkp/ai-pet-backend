@@ -187,6 +187,7 @@ async def put_admin_persona(
             overrides=payload.overrides,
             follow_latest=payload.follow_latest,
             kb_version=kb_version,
+            dossier=payload.dossier.model_dump(),
         )
         session.add(profile)
     else:
@@ -195,6 +196,7 @@ async def put_admin_persona(
         profile.overrides = payload.overrides
         profile.follow_latest = payload.follow_latest
         profile.kb_version = kb_version
+        profile.dossier = payload.dossier.model_dump()
     session.add(
         AuditLog(
             actor="admin",
