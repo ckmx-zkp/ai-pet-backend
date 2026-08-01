@@ -9,6 +9,7 @@ from web_api.deps import get_current_claims, require_admin, require_internal_tok
 from web_api.middleware import TraceLoggingMiddleware
 from web_api.routers import (
     admin,
+    admin_devices,
     analyses,
     auth,
     devices,
@@ -51,6 +52,9 @@ def create_app() -> FastAPI:
 
     # 管理台路由：JWT + admin 角色
     app.include_router(admin.router, prefix="/api", dependencies=[Depends(require_admin)])
+    app.include_router(
+        admin_devices.router, prefix="/api", dependencies=[Depends(require_admin)]
+    )
 
     # 服务间路由：内部 token，挂 /internal 前缀（/api/internal/*）
     app.include_router(

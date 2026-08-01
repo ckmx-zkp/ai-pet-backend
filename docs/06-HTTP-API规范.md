@@ -54,6 +54,22 @@ xiaozhi 未接入前恒为 `false`。
 
 ## 人设与知识库
 
+### 管理端设备资产与授权
+
+管理端路由均要求 `role=admin`，只用于运营/诊断，**不改变** `devices.user_id`，不复用用户
+绑定接口。涉及用户内容时仅返回已脱敏消息，所有写操作写入 `audit_logs`。
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/admin/devices?limit&offset&q` | 全量设备资产分页；`q` 匹配平台 ID、MAC、名称或 binding_id；返回绑定码与是否已认领，不返回用户身份 |
+| GET | `/admin/devices/{id}` | 设备资产详情/能力/在线镜像/当前 binding_id |
+| POST | `/admin/devices/{id}/binding-id/rotate` | 生成新的 binding_id，旧码立即失效；不改变用户归属，写审计 |
+| GET/PUT | `/admin/devices/{id}/persona` | 管理端读取/修改已认领设备人设；未认领设备返回 409；写操作审计 |
+| GET | `/admin/devices/{id}/messages?from&to&limit&offset` | 只读脱敏历史 |
+| GET | `/admin/devices/{id}/memories?q&status&limit&offset` | 记忆列表与审核操作（见下表） |
+| GET | `/admin/devices/{id}/analyses?kind=&limit&offset` | 分析结果列表 |
+| GET | `/admin/devices/{id}/peripheral` | 外设状态快照 |
+
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET/PUT | `/devices/{id}/persona` | 读/写星座 MBTI 忌口钉扎 |
