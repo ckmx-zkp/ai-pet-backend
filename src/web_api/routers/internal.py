@@ -4,6 +4,8 @@
 红线 1：对话只存 content_redacted，原文不落库不落日志（脱敏见 pet_common.redaction）。
 
 设备标识统一为 device_uid（MAC）：小智侧只持有 MAC，不知道 backend 自增 id。
+会话标识统一为 external_session_id（字符串，xiaozhi 侧分配、全局唯一）：
+chat_sessions 内部自增 id 不暴露给小智，仅作 chat_messages.session_id 的外键。
 chat_messages 无 ts 列，事件的 ts 写入 created_at（历史查询索引列即事件时间）。
 devices 无 last_seen_at 列，online_at 兼作最后活跃镜像（docs/06 §设备在线状态）。
 """
@@ -35,10 +37,12 @@ DeviceUid = Annotated[str, StringConstraints(min_length=4, max_length=64, strip_
 
 
 class ChatEventIn(BaseModel):
-    """旁路消息：契约 5 字段（docs/06）；session_id 为 xiaozhi 侧会话号，首次见自动建行。"""
+    """旁路消息：契约 5 字段（docs/06）；session_id 为 xiaozhi 侧字符串会话号，首次见自动建行。"""
 
     device_uid: DeviceUid
-    session_id: int = Field(ge=1)
+    session_id: Annotated[
+        str, StringConstraints(min_length=1, max_length=128, strip_whitespace=True)
+    ]
     role: Literal["user", "assistant", "system"]
     content: str = Field(min_length=1)
     ts: datetime
@@ -73,7 +77,7 @@ class DeviceSeenResponse(BaseModel):
 
 
 class SessionEndResponse(BaseModel):
-    session_id: int
+    session_id: str  # 回显 xiaozhi 侧字符串会话号（external_session_id）
     ended: bool  # 本次调用是否新置 ended_at（重复 end 幂等，不重复入队）
     task_id: int | None
 
@@ -83,8 +87,12 @@ async def _find_device_by_uid(session: AsyncSession, device_uid: str) -> Device 
     return result.scalar_one_or_none()
 
 
-async def _get_chat_session(session: AsyncSession, session_id: int) -> ChatSession | None:
-    result = await session.execute(select(ChatSession).where(ChatSession.id == session_id))
+async def _find_chat_session_by_external_id(
+    session: AsyncSession, external_session_id: str
+) -> ChatSession | None:
+    result = await session.execute(
+        select(ChatSession).where(ChatSession.external_session_id == external_session_id)
+    )
     return result.scalar_one_or_none()
 
 
@@ -114,7 +122,7 @@ async def ingest_chat_events(
     """旁路消息：脱敏后写 chat_messages（只存 content_redacted），body 支持单条或数组。
 
     按 device_uid 解析设备，任一未知设备整体 404（不部分落库）；
-    session_id 首次见自动建行（session_id 即 chat_sessions.id），
+    session_id（external_session_id，字符串）首次见自动建行，
     已存在但属于其他设备 → 404；每批镜像 devices.online_at。
     """
     events = payload if isinstance(payload, list) else [payload]
@@ -128,19 +136,26 @@ async def ingest_chat_events(
         devices[event.device_uid] = device
 
     now = _utcnow()
+    sessions: dict[str, ChatSession] = {}
     for event in events:
         device = devices[event.device_uid]
-        chat_session = await _get_chat_session(session, event.session_id)
+        chat_session = sessions.get(event.session_id)
         if chat_session is None:
-            chat_session = ChatSession(
-                id=event.session_id, device_id=device.id, user_id=device.user_id
-            )
-            session.add(chat_session)
-        elif chat_session.device_id != device.id:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="session not found")
+            chat_session = await _find_chat_session_by_external_id(session, event.session_id)
+            if chat_session is None:
+                chat_session = ChatSession(
+                    external_session_id=event.session_id,
+                    device_id=device.id,
+                    user_id=device.user_id,
+                )
+                session.add(chat_session)
+                await session.flush()  # 取内部自增 id，供 chat_messages 外键引用
+            elif chat_session.device_id != device.id:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, detail="session not found")
+            sessions[event.session_id] = chat_session
         session.add(
             ChatMessage(
-                session_id=event.session_id,
+                session_id=chat_session.id,
                 device_id=device.id,
                 role=event.role,
                 content_redacted=redact_text(event.content),
@@ -170,12 +185,14 @@ async def ingest_peripheral_events(payload: PeripheralEventIn, session: SessionD
 
 
 @router.post("/chat/sessions/{session_id}/end", response_model=SessionEndResponse)
-async def end_chat_session(session_id: int, session: SessionDep) -> SessionEndResponse:
+async def end_chat_session(session_id: str, session: SessionDep) -> SessionEndResponse:
     """会话结束：ended_at 落库 + daily_summary 任务入队 agent_tasks（status=pending）。
 
+    session_id 为 xiaozhi 侧字符串会话号（external_session_id）；
+    任务 payload 同时带外部会话号与内部 id，worker 两侧都可定位。
     幂等：已结束的会话重复 end 直接返回，不重复入队。
     """
-    chat_session = await _get_chat_session(session, session_id)
+    chat_session = await _find_chat_session_by_external_id(session, session_id)
     if chat_session is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="session not found")
     if chat_session.ended_at is not None:
@@ -183,7 +200,11 @@ async def end_chat_session(session_id: int, session: SessionDep) -> SessionEndRe
     chat_session.ended_at = _utcnow()
     task = AgentTask(
         kind="daily_summary",
-        payload={"session_id": session_id, "device_id": chat_session.device_id},
+        payload={
+            "session_id": chat_session.id,
+            "external_session_id": session_id,
+            "device_id": chat_session.device_id,
+        },
         status="pending",
     )
     session.add(task)

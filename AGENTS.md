@@ -1,6 +1,6 @@
 # AGENTS.md — ai-pet-backend
 
-> AI 协作入口。**先拉取根协作文档** `D:/Home_Work/AI-Pet项目全景与进度.md`（第一信息源），再读 `D:/Home_Work/AI-Pet协作看板.md`。
+> AI 协作入口。**先拉取根协作文档** `D:/Home_Work/work_dashboard/AI-Pet项目全景与进度.md`（第一信息源），再读 `D:/Home_Work/work_dashboard/AI-Pet协作看板.md`。
 > 技术栈以 `docs/08-技术栈选型决策.md` 为最高优先级；表结构见 `docs/02`；API 契约见 `docs/06`。
 
 ## 技术栈决策摘要

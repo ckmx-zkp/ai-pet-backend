@@ -85,7 +85,7 @@ xiaozhi 未接入前恒为 `false`。
 ```json
 {
   "device_uid": "aa:bb:cc:dd:ee:ff",
-  "session_id": 10,
+  "session_id": "sess-e3-test-001",
   "role": "user | assistant",
   "content": "...",
   "ts": "2026-08-01T12:00:00Z"
@@ -97,7 +97,9 @@ body 支持单条对象或对象数组（批量）。**脱敏由 backend 落库�
 
 - **设备标识统一用 `device_uid`（MAC）**：小智侧只持有 MAC，不知道 backend 自增 id；
   与 `persona_pack` 路径参数保持一致（本表早先草稿写作 `device_id`，以此为准）。
-- `session_id` 为 xiaozhi 侧会话号：backend 以之作为 `chat_sessions.id`，首次见自动建行；
+- **`session_id` 为字符串**（小智侧分配、全局唯一，UUID 风格如 `"sess-e3-test-001"`）：
+  backend 存 `chat_sessions.external_session_id`（唯一索引），首次见自动建行；
+  backend 内部自增 id **不暴露给小智**，仅作 `chat_messages.session_id` 外键；
   事件的 `ts` 写入 `chat_messages.created_at`（该表无独立 ts 列）。
 - 未知设备 404（批量时任一未知整体不落库）；session 已存在但属于其他设备 404。
 - 响应：`{"accepted": n}`；每批镜像 `devices.online_at`（无 last_seen_at 列，online_at 兼任）。
@@ -112,8 +114,9 @@ body 支持单条对象或对象数组（批量）。**脱敏由 backend 落库�
 
 ### `POST /internal/chat/sessions/{id}/end` 响应
 
-置 `ended_at` 并入队 `agent_tasks`（`kind=daily_summary`，payload 含 `session_id/device_id`，`status=pending`）。
-幂等：已结束的会话重复调用不重复入队。响应：`{"session_id": 10, "ended": true, "task_id": 123}`。
+路径 `{id}` 为 xiaozhi 侧字符串会话号（external_session_id）。置 `ended_at` 并入队
+`agent_tasks`（`kind=daily_summary`，payload 含 `session_id`（内部 id）/`external_session_id`/`device_id`，`status=pending`）。
+幂等：已结束的会话重复调用不重复入队。响应：`{"session_id": "sess-e3-test-001", "ended": true, "task_id": 123}`。
 
 ### `POST /internal/devices/seen` 请求/响应
 

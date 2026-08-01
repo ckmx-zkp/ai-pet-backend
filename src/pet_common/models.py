@@ -153,6 +153,8 @@ class ChatSession(Base):
     __tablename__ = "chat_sessions"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    # xiaozhi 侧分配的字符串会话号（UUID 风格），全局唯一；内部自增 id 不暴露给小智
+    external_session_id: Mapped[str | None] = mapped_column(String(128))
     device_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("devices.id", ondelete="CASCADE"), nullable=False
     )
@@ -167,7 +169,10 @@ class ChatSession(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    __table_args__ = (Index("ix_chat_sessions_device_created", "device_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_chat_sessions_device_created", "device_id", "created_at"),
+        Index("uq_chat_sessions_external_session_id", "external_session_id", unique=True),
+    )
 
 
 class ChatMessage(Base):
