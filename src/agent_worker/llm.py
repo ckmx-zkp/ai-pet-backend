@@ -16,6 +16,11 @@ class LLMUnavailableError(RuntimeError):
     """部署尚未配置模型服务时，任务应可重试而不是伪造分析结果。"""
 
 
+def _is_retryable_status(status_code: int) -> bool:
+    """模型供应商鉴权、限流或服务端故障可能在配置修复后恢复。"""
+    return status_code in {401, 403, 408, 409, 425, 429} or status_code >= 500
+
+
 def _extract_json(content: str) -> dict[str, Any]:
     """接受纯 JSON 或模型偶发包裹的 Markdown JSON code fence。"""
     value = content.strip()
@@ -63,9 +68,14 @@ async def generate_structured_analysis(
     }
     headers = {"Authorization": f"Bearer {settings.llm_api_key}"}
     url = f"{settings.llm_base_url.rstrip('/')}/chat/completions"
-    async with httpx.AsyncClient(timeout=settings.llm_timeout_seconds) as client:
-        response = await client.post(url, headers=headers, json=body)
-        response.raise_for_status()
+    try:
+        async with httpx.AsyncClient(timeout=settings.llm_timeout_seconds) as client:
+            response = await client.post(url, headers=headers, json=body)
+    except httpx.RequestError as exc:
+        raise LLMUnavailableError(f"LLM request unavailable: {type(exc).__name__}") from exc
+    if _is_retryable_status(response.status_code):
+        raise LLMUnavailableError(f"LLM API temporarily unavailable: HTTP {response.status_code}")
+    response.raise_for_status()
     data: dict[str, Any] = response.json()
     choices = data.get("choices")
     if not isinstance(choices, list) or not choices:

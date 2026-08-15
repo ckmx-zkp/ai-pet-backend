@@ -2,7 +2,7 @@
 
 import pytest
 
-from agent_worker.llm import _extract_json
+from agent_worker.llm import _extract_json, _is_retryable_status
 from agent_worker.tasks import _confidence, _text_list
 from web_api.routers.internal import _bounded_context
 
@@ -15,6 +15,14 @@ def test_extract_llm_json_object_and_markdown_fence() -> None:
 def test_extract_llm_json_rejects_non_object() -> None:
     with pytest.raises(ValueError):
         _extract_json("[]")
+
+
+def test_retryable_llm_statuses_do_not_exhaust_worker_attempts() -> None:
+    assert _is_retryable_status(401)
+    assert _is_retryable_status(403)
+    assert _is_retryable_status(429)
+    assert _is_retryable_status(500)
+    assert not _is_retryable_status(400)
 
 
 def test_worker_normalizes_untrusted_llm_values() -> None:
