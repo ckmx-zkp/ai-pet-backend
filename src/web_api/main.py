@@ -56,7 +56,7 @@ def create_app() -> FastAPI:
         admin_devices.router, prefix="/api", dependencies=[Depends(require_admin)]
     )
 
-    # 服务间路由：内部 token，挂 /internal 前缀（/api/internal/*）
+    # 服务间路由：内部 token，最终路径为 /api/internal/*。
     app.include_router(
         internal.router, prefix="/api", dependencies=[Depends(require_internal_token)]
     )

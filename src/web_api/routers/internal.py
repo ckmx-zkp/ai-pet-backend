@@ -1,4 +1,4 @@
-"""/internal/* 服务间接口（docs/06 §内部接口，xiaozhi-server 调用）。
+"""/api/internal/* 服务间接口（docs/06 §内部接口，xiaozhi-server 调用）。
 
 鉴权：X-Internal-Token 服务间 token。worker 禁进实时路径——这些接口只做快查/入队。
 红线 1：对话只存 content_redacted，原文不落库不落日志（脱敏见 pet_common.redaction）。

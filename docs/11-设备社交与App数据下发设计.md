@@ -15,7 +15,7 @@
                                          │ 捕获 token
                                          ▼ MQTT/MCP social.report
                                     xiaozhi-server
-                                         │ POST /internal/social/events
+                                         │ POST /api/internal/social/events
                                          ▼
                           backend 解析 token → 认出设备A
                                          │
@@ -34,7 +34,7 @@
 
 ### 1.3 上传路径
 
-设备**不直连** backend（与 docs/08 单通道原则一致）：设备经 MQTT 调 MCP 工具 `social.report` → xiaozhi-server 转发 `POST /internal/social/events`（`X-Internal-Token` 鉴权）。防刷：同一 device 上报频率限制（每分钟 ≤10 次，契约中注明）。
+设备**不直连** backend（与 docs/08 单通道原则一致）：设备经 MQTT 调 MCP 工具 `social.report` → xiaozhi-server 转发 `POST /api/internal/social/events`（`X-Internal-Token` 鉴权）。防刷：同一 device 上报频率限制（每分钟 ≤10 次，契约中注明）。
 
 ### 1.4 数据模型（新增 2 表）
 
@@ -63,7 +63,7 @@
 
 | 端点 | 用途 |
 |------|------|
-| `POST /internal/social/events` | 小智转发：{device_id, token, ts} → 解析、记好友、返回对方公开信息 |
+| `POST /api/internal/social/events` | 小智转发：{device_id, token, ts} → 解析、记好友、返回对方公开信息 |
 | `GET /devices/{id}/friends` | 好友列表（宠物名、人设摘要、last_met_at、meet_count），统一分页 |
 | `DELETE /devices/{id}/friends/{fid}` | 删除好友（隐私删除权） |
 
@@ -96,7 +96,7 @@
 |------|-----|-----------|------|
 | 设备名/在线/last_seen/固件/capabilities | `GET /devices`、`GET /devices/{id}` | 可见可编辑（仅名称） | 在线状态以后端镜像为准，小智侧是真源 |
 | 人设：星座/MBTI/忌口/follow_latest/kb_version | `GET/PUT /devices/{id}/persona` | 可见可编辑 | kb_version 展示"当前版本"，钉扎语义给开关 tooltip |
-| persona_pack（编译产物） | 仅 `/internal/*` | **不可见** | 含 prompt 片段，属系统内部 |
+| persona_pack（编译产物） | 仅 `/api/internal/*` | **不可见** | 含 prompt 片段，属系统内部 |
 | 对话历史 | `GET/DELETE /devices/{id}/messages` | 可见只读 + 可删 | 按日分组、分页；按日删除二次确认+审计 |
 | 记忆 | memories CRUD + approve/reject | 可见可编辑 | candidate 需用户审核通过/驳回；source（manual/agent）打标展示 |
 | 分析（日摘要/日运/情绪标签） | `GET /devices/{id}/analyses?kind=` | 可见只读 | 卡片流；含"生成中/失败"状态 |
@@ -133,7 +133,7 @@
    ▼
 backend：persona_profiles 落库（kb_version 取当前 published，follow_latest 默认开）
    → PersonaCompiler 编译 → persona_pack 就绪（含 default_emotion、retrieval_hints）
-   │ 拉取式下发：小智在每次会话开始时 GET /internal/devices/{uid}/persona_pack
+   │ 拉取式下发：小智在每次会话开始时 GET /api/internal/devices/{uid}/persona_pack
    ▼
 xiaozhi-server 缓存 persona_pack → 注入 system prompt → 设备按此人设对话
 ```

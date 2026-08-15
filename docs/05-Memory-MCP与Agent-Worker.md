@@ -4,6 +4,13 @@
 
 供 `xiaozhi-server` 在会话中调用，底层读写业务库。
 
+### 传输与鉴权契约
+
+- 生产传输固定为 **streamable HTTP MCP**：`POST/GET /mcp`，由 `memory-mcp` 独立容器提供；本地命令仍可用 stdio 调试。
+- 仅允许受控 Docker 内网访问，必须携带 `X-Internal-Token`；服务不映射公网端口。
+- 工具一律传 `device_uid`（规范化小写 MAC/SN），不得传递或依赖平台自增 `devices.id`。
+- 小智调用预算 800ms～1.5s；网络错误、401、5xx 或 MCP 协议错误均降级为无记忆会话，不阻塞语音/TTS。
+
 ### 建议工具
 
 | 工具 | 行为 |
@@ -11,6 +18,14 @@
 | `memory.search` | 按 device + query/tags；可吃 retrieval_hints |
 | `memory.add` | 默认 candidate 或按参数 |
 | `memory.forget` | 软删/归档，写审计 |
+
+工具参数摘要：
+
+| 工具 | 必填参数 | 结果 |
+|------|----------|------|
+| `memory.search` | `device_uid`, `query` | 仅返回该设备已审核 `active` 记忆，`limit` 上限 20 |
+| `memory.add` | `device_uid`, `title`, `content` | 固定写 `source=agent,status=candidate`，不允许实时链路绕过审核 |
+| `memory.forget` | `device_uid`, `memory_id` | 仅可归档该设备自身的记忆，并写审计 |
 
 ### 约束
 

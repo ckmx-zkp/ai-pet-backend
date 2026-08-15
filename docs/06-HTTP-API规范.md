@@ -1,6 +1,6 @@
 # 06 — HTTP API 规范
 
-> 前缀假设 `/api`。鉴权：用户 JWT；`/internal/*` 服务间 token。  
+> 所有下列路径均为最终路径。鉴权：用户 JWT；`/api/internal/*` 服务间 token。
 > 字段名实现时可微调，路径语义保持。
 
 ## 通用约定
@@ -118,14 +118,14 @@ KB 条目遵循不可变发布：`POST /admin/kb/zodiac`、`POST /admin/kb/mbti`
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/internal/devices/{device_uid}/persona_pack` | 编译或读缓存 |
-| POST | `/internal/chat/events` | 旁路消息（脱敏落库） |
-| POST | `/internal/peripheral/events` | 外设事件（单行覆盖写） |
-| POST | `/internal/chat/sessions/{id}/end` | 触发摘要入队（幂等） |
-| POST | `/internal/devices/seen` | 设备首见登记/活跃上报；首次见到 MAC 时分配 app `binding_id` |
-| GET | `/internal/context/device` | 小智 Context Provider；读取 `device-id` 请求头，返回动态短上下文 `{"code":0,"data":[]}`，未知/未认领设备也空成功降级 |
+| GET | `/api/internal/devices/{device_uid}/persona_pack` | 编译或读缓存 |
+| POST | `/api/internal/chat/events` | 旁路消息（脱敏落库） |
+| POST | `/api/internal/peripheral/events` | 外设事件（单行覆盖写） |
+| POST | `/api/internal/chat/sessions/{id}/end` | 触发摘要入队（幂等） |
+| POST | `/api/internal/devices/seen` | 设备首见登记/活跃上报；首次见到 MAC 时分配 app `binding_id` |
+| GET | `/api/internal/context/device` | 小智 Context Provider；读取 `device-id` 请求头，返回动态短上下文 `{"code":0,"data":[]}`，未知/未认领设备也空成功降级 |
 
-### `GET /internal/context/device`（小智 C5）
+### `GET /api/internal/context/device`（小智 C5）
 
 鉴权仍为 `X-Internal-Token`；小智上游自动传 `device-id: {device_uid}`。响应 `data` 最多 6
 条、总计最多约 800 字符，只包含最近 36 小时的 `daily_summary`、可跟进事项及已确认的
@@ -151,7 +151,7 @@ KB 条目遵循不可变发布：`POST /admin/kb/zodiac`、`POST /admin/kb/mbti`
 > 原因：KB v2 片段只描述沟通风格，模型在基础行为"不编造人设"约束下会否认自己有星座。
 > 契约 7 字段不变，仅片段内容语义明确化。
 
-### `POST /internal/chat/events` 请求 schema（钉死 5 字段）
+### `POST /api/internal/chat/events` 请求 schema（钉死 5 字段）
 
 ```json
 {
@@ -175,7 +175,7 @@ body 支持单条对象或对象数组（批量）。**脱敏由 backend 落库�
 - 未知设备 404（批量时任一未知整体不落库）；session 已存在但属于其他设备 404。
 - 响应：`{"accepted": n}`；每批镜像 `devices.online_at`（无 last_seen_at 列，online_at 兼任）。
 
-### `POST /internal/peripheral/events` 请求 schema
+### `POST /api/internal/peripheral/events` 请求 schema
 
 ```json
 {"device_uid": "aa:bb:cc:dd:ee:ff", "emotion": "happy", "gaze": "center", "closed": false, "extra": {}}
@@ -183,13 +183,13 @@ body 支持单条对象或对象数组（批量）。**脱敏由 backend 落库�
 
 `device_peripheral_state` 一设备一行**全量覆盖写**（未提供的字段清空）；设备不存在 404；响应 204。
 
-### `POST /internal/chat/sessions/{id}/end` 响应
+### `POST /api/internal/chat/sessions/{id}/end` 响应
 
 路径 `{id}` 为 xiaozhi 侧字符串会话号（external_session_id）。置 `ended_at` 并入队
 `agent_tasks`（`kind=daily_summary`，payload 含 `session_id`（内部 id）/`external_session_id`/`device_id`，`status=pending`）。
 幂等：已结束的会话重复调用不重复入队。响应：`{"session_id": "sess-e3-test-001", "ended": true, "task_id": 123}`。
 
-### `POST /internal/devices/seen` 请求/响应
+### `POST /api/internal/devices/seen` 请求/响应
 
 ```json
 {"device_uid": "aa:bb:cc:dd:ee:ff", "firmware_version": "1.2.3", "capabilities": {"screen": true}}

@@ -79,17 +79,17 @@ services:
   memory-mcp:
     build: .
     restart: unless-stopped
-    # stdio 传输，不暴露端口；由 xiaozhi-server 经内网挂载
-    # stdin_open+tty 保持 stdio MCP server 在容器内常驻（无 stdin 会立即退出）
-    stdin_open: true
-    tty: true
     environment:
       APP_SERVICE: memory-mcp
       SERVICE_NAME: memory-mcp
       DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/ai_pet
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?must set INTERNAL_SERVICE_TOKEN}
+      MEMORY_MCP_TRANSPORT: streamable-http
+      MEMORY_MCP_HOST: 0.0.0.0
+      MEMORY_MCP_PORT: 8000
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-    # stdio 传输，不暴露端口；由 xiaozhi-server 经内网挂载
+    expose:
+      - "8000" # only backend Docker network; do not publish to the public host
     depends_on:
       postgres:
         condition: service_healthy

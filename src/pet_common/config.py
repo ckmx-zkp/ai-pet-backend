@@ -40,6 +40,11 @@ class Settings(BaseSettings):
 
     worker_poll_interval_seconds: float = 2.0
 
+    # Memory MCP is stdio in local tooling and streamable HTTP in deployment.
+    memory_mcp_transport: str = "stdio"
+    memory_mcp_host: str = "0.0.0.0"
+    memory_mcp_port: int = 8000
+
 
 @lru_cache
 def get_settings() -> Settings:

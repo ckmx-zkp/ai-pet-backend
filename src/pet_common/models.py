@@ -260,7 +260,7 @@ class AnalysisResult(Base):
 
 
 class DevicePeripheralState(Base):
-    """外设快照：一设备一行，POST /internal/peripheral/events 覆盖写。"""
+    """外设快照：一设备一行，POST /api/internal/peripheral/events 覆盖写。"""
 
     __tablename__ = "device_peripheral_state"
 

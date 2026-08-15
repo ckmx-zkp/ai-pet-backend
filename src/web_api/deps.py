@@ -1,7 +1,7 @@
 """JWT 鉴权依赖（PyJWT）与服务间 token 校验。
 
 - 用户 JWT：Authorization: Bearer <jwt>，负载即 claims dict（sub=user_id 等）。
-- /internal/*：X-Internal-Token 头，与 INTERNAL_SERVICE_TOKEN 比对（服务间共享密钥）。
+- /api/internal/*：X-Internal-Token 头，与 INTERNAL_SERVICE_TOKEN 比对（服务间共享密钥）。
 """
 
 from typing import Annotated, Any
@@ -52,7 +52,7 @@ def require_internal_token(
     settings: SettingsDep,
     x_internal_token: Annotated[str | None, Header()] = None,
 ) -> None:
-    """/internal/* 路由依赖：服务间共享 token。"""
+    """/api/internal/* 路由依赖：服务间共享 token。"""
     if not x_internal_token or x_internal_token != settings.internal_service_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid internal token"
