@@ -146,6 +146,11 @@ KB 条目遵循不可变发布：`POST /admin/kb/zodiac`、`POST /admin/kb/mbti`
 }
 ```
 
+> 2026-08-16 起，`system_prompt_fragments` 首条固定为编译层注入的身份行
+> （"你的星座是天蝎座，MBTI 是 ENFP；被问到时自然承认……"），其后才是 KB 风格片段。
+> 原因：KB v2 片段只描述沟通风格，模型在基础行为"不编造人设"约束下会否认自己有星座。
+> 契约 7 字段不变，仅片段内容语义明确化。
+
 ### `POST /internal/chat/events` 请求 schema（钉死 5 字段）
 
 ```json
