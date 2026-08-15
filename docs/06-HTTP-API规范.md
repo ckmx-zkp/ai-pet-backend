@@ -134,6 +134,9 @@ KB 条目遵循不可变发布：`POST /admin/kb/zodiac`、`POST /admin/kb/mbti`
 
 ### `persona_pack` 响应 schema（钉死 7 字段）
 
+设备不存在或尚未配置人设时返回 `404`；小智服务应加载本地安全 onboarding 人设并继续会话，
+不得把 404 视为重试风暴或后端故障。已配置人设时才返回下列固定 7 字段。
+
 ```json
 {
   "kb_version": 3,
