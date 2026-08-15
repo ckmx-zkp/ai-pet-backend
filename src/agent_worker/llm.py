@@ -5,6 +5,7 @@ JWT 或数据库连接信息发送给模型服务。
 """
 
 import json
+import re
 from typing import Any
 
 import httpx
@@ -23,7 +24,9 @@ def _is_retryable_status(status_code: int) -> bool:
 
 def _extract_json(content: str) -> dict[str, Any]:
     """接受纯 JSON 或模型偶发包裹的 Markdown JSON code fence。"""
-    value = content.strip()
+    # Reasoning-capable OpenAI-compatible models may prepend <think>...</think>
+    # despite JSON output requests. Never persist that reasoning in analysis output.
+    value = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
     if value.startswith("```"):
         value = value.split("\n", 1)[1] if "\n" in value else ""
         if value.endswith("```"):

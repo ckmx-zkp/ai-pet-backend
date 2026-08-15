@@ -10,6 +10,9 @@ from web_api.routers.internal import _bounded_context
 def test_extract_llm_json_object_and_markdown_fence() -> None:
     assert _extract_json('{"daily_summary": {}}') == {"daily_summary": {}}
     assert _extract_json('```json\n{"memory_candidates": []}\n```') == {"memory_candidates": []}
+    assert _extract_json('<think>private reasoning</think>\n{"daily_summary": {}}') == {
+        "daily_summary": {}
+    }
 
 
 def test_extract_llm_json_rejects_non_object() -> None:
