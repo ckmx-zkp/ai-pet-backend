@@ -139,3 +139,68 @@ def test_put_persona_rejects_unseeded_selection(client: TestClient) -> None:
         headers=auth_headers(),
     )
     assert response.status_code == 422
+
+
+async def test_compile_profile_prepends_identity_fragment(
+    store: FakeSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """身份行必须在 KB 风格片段之前，模型才有事实依据承认自己的星座。"""
+    from web_api import persona_service
+
+    async def fake_get_zodiac(
+        session: AsyncSession, level: str, key: str, kb_version: int | None
+    ) -> ZodiacKBEntry | None:
+        if level == "sign":
+            return ZodiacKBEntry(
+                level="sign",
+                key="scorpio",
+                parent_key="water",
+                version=2,
+                status="published",
+                payload={"prompt_fragments": ["与天蝎风格用户交流时减少表面寒暄。"]},
+            )
+        return ZodiacKBEntry(
+            level="element",
+            key="water",
+            parent_key=None,
+            version=1,
+            status="published",
+            payload={},
+        )
+
+    async def fake_get_mbti(
+        session: AsyncSession, key: str, kb_version: int | None
+    ) -> MBTIKBEntry | None:
+        return MBTIKBEntry(
+            key="ENFP",
+            version=2,
+            status="published",
+            payload={"prompt_fragments": ["与 ENFP 风格用户交流时保留自主选择。"]},
+        )
+
+    monkeypatch.setattr(persona_service, "get_zodiac_entry", fake_get_zodiac)
+    monkeypatch.setattr(persona_service, "get_mbti_entry", fake_get_mbti)
+
+    profile = PersonaProfile(
+        user_id=1,
+        device_id=1,
+        sun_sign="scorpio",
+        mbti="ENFP",
+        follow_latest=True,
+        overrides={},
+        dossier={},
+    )
+    pack = await persona_service.compile_profile(cast(AsyncSession, store), profile)
+    fragments = pack["system_prompt_fragments"]
+    assert fragments[0] == "你的星座是天蝎座，MBTI 是 ENFP；被问到时自然承认，平时不用主动提起。"
+    assert fragments[1:] == [
+        "与天蝎风格用户交流时减少表面寒暄。",
+        "与 ENFP 风格用户交流时保留自主选择。",
+    ]
+
+
+def test_identity_fragment_unknown_sign_falls_back_to_key() -> None:
+    from web_api.persona_service import _identity_fragment
+
+    assert _identity_fragment("scorpio", "ENFP").startswith("你的星座是天蝎座")
+    assert "unknown-sign" in _identity_fragment("unknown-sign", "INTJ")

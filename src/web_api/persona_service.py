@@ -82,6 +82,31 @@ def _retrieval_hints(payloads: Iterable[dict[str, Any]]) -> list[str]:
     return list(dict.fromkeys(hints))
 
 
+_SIGN_NAMES = {
+    "aries": "白羊座",
+    "taurus": "金牛座",
+    "gemini": "双子座",
+    "cancer": "巨蟹座",
+    "leo": "狮子座",
+    "virgo": "处女座",
+    "libra": "天秤座",
+    "scorpio": "天蝎座",
+    "sagittarius": "射手座",
+    "capricorn": "摩羯座",
+    "aquarius": "水瓶座",
+    "pisces": "双鱼座",
+}
+
+
+def _identity_fragment(sun_sign: str, mbti: str) -> str:
+    """身份片段：KB 片段只描述沟通风格，身份事实由编译层显式给出。
+
+    没有它，模型在"不编造人设"的基础行为约束下只能否认自己有星座。
+    """
+    sign_name = _SIGN_NAMES.get(sun_sign, sun_sign)
+    return f"你的星座是{sign_name}，MBTI 是 {mbti}；被问到时自然承认，平时不用主动提起。"
+
+
 def _dossier_fragments(dossier: dict[str, Any]) -> list[str]:
     """稳定档案转为 prompt 片段；只取用户/Admin 明确保存的字段。"""
     labels = {
@@ -131,7 +156,10 @@ async def compile_profile(session: AsyncSession, profile: PersonaProfile) -> dic
     payloads = [element.payload, sign.payload, mbti.payload, profile.overrides]
     return {
         "kb_version": compiled["kb_version"],
-        "system_prompt_fragments": compiled["prompt_fragments"],
+        "system_prompt_fragments": [
+            _identity_fragment(profile.sun_sign, profile.mbti),
+            *compiled["prompt_fragments"],
+        ],
         "style_constraints": _merge_list(payloads, "style_constraints"),
         "taboo": compiled["taboo"],
         "default_emotion": _last_value(payloads, "default_emotion", "calm"),
