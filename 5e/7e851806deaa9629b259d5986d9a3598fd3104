@@ -1,0 +1,242 @@
+src/web_api/main.py
+  s_c8e2cbb55ab86b::t_b0bdcf24e981ad 57
+src/web_api/routers/analyses.py
+  s_a905f5e454d11b::t_2afc48549b08e5 14,62-70
+  s_eb774045fc6449::t_f0b5c7515097d5 50
+tests/test_persona.py
+  s_4f3d841432bd5f::t_8c743e1011bded 209-264
+src/agent_worker/worker.py
+  s_f879f2889c1a59::t_a9d51314185de7 15-20,31,110-120,122,126,133-136
+  s_6fba6a848de13f::t_7dabac3113cddb 132
+src/web_api/routers/admin_devices.py
+  s_45e0beef6ae395::t_5332f5390f01cc 23,294-295
+tests/test_export_and_kb.py
+  s_fb12e00d63b89b::t_b6e04c6d3009c9 30-32
+  s_fb12e00d63b89b::t_4e0537d2175fc8 27-29
+  s_fb12e00d63b89b::t_4b9098dfc489e0 33-35
+src/agent_worker/tasks.py
+  s_de0cd904c4775a::t_e865e561d0343f 14,28,105,147-148,604-605
+  s_4f7a4595eb9e0d::t_6f5940bee7608d 581-602
+  s_4f7a4595eb9e0d::t_94eb40636d5b44 578-580
+src/web_api/routers/persona.py
+  s_6f45ce81429c16::t_d91fb84171b942 9,13-18,127-208
+src/web_api/routers/memories.py
+  s_9b3cb008bad755::t_3cc7a42bdbb774 152-153
+  s_0d4537badba999::t_bf34bcbd72f223 14,98,110-111,132
+src/persona_compiler/__init__.py
+  s_d6e04bb4698214::t_fb0e63f3af9526 7,10-17
+tests/test_memory_profile.py
+  s_91aebe6fd21c65::t_4d822c7b1db694 90-92
+  s_2c6262b121038f::t_4b41828605e546 28
+  s_2cc407badba638::t_ce257debdbdf35 78-87
+  s_2c6262b121038f::t_d9df26a224cc93 25-27
+  s_91aebe6fd21c65::t_364de6d444940a 93-95
+src/web_api/routers/admin.py
+  s_20902d6325346a::t_a50f3da10aa237 305-347
+  s_de2c36f362c553::t_ef2fab624f10cc 12,364,371,384-419
+  s_eb774045fc6449::t_6de934f2143980 293-304,348-350,357-363,366-370
+alembic/versions/0009_kb_v3_first_person.py
+  s_187e77b8787ac2::t_b24341804b4fb1 1-8,10-36,38-42,44-55,57-60,62-74
+  s_d04c7995a548e1::t_3309594a5ab453 9,37,43,56,61
+src/memory_mcp/server.py
+  s_68e5580b60d4bc::t_9e98014471d65d 1,3-5,155-156
+  s_3582a7ac4d4497::t_0824bb3344ac68 20,150-154
+docs/03-人设与星座知识库.md
+  s_eb774045fc6449::t_a8aaeeb926e95b 45-46,59-60,64-65
+docs/04-记忆历史与分析.md
+  s_eb774045fc6449::t_7764558f8f5b54 27-29,37-64
+docs/05-Memory-MCP与Agent-Worker.md
+  s_eb774045fc6449::t_f7a8e7787f039b 42-43,45-46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "5e7e851806deaa9629b259d5986d9a3598fd3104",
+  "prompts": {},
+  "sessions": {
+    "s_0d4537badba999": {
+      "agent_id": {
+        "tool": "mock_ai",
+        "id": "ai-thread-1787050247679499600",
+        "model": "unknown"
+      },
+      "human_author": "kunpeng2.zhang <kunpeng2.zhang@ly.com>"
+    },
+    "s_187e77b8787ac2": {
+      "agent_id": {
+        "tool": "mock_ai",
+        "id": "ai-thread-1787050367275523600",
+        "model": "unknown"
+      },
+      "human_author": "kunpeng2.zhang <kunpeng2.zhang@ly.com>"
+    },
+    "s_20902d6325346a": {
+      "agent_id": {
+        "tool": "mock_ai",
+        "id": "ai-thread-1787050534224868400",
+        "model": "unknown"
+      },
+      "human_author": "kunpeng2.zhang <kunpeng2.zhang@ly.com>"
+    },
+    "s_2c6262b121038f": {
+      "agent_id": {
+        "tool": "mock_ai",
+        "id": "ai-thread-1787050536851571300",
+        "model": "unknown"
+      },
+      "human_author": "kunpeng2.zhang <kunpeng2.zhang@ly.com>"
+    },
+    "s_2cc407badba638": {
+      "agent_id": {
+        "tool": "mock_ai",
+        "id": "ai-thread-1787050489643700800",
+        "model": "unknown"
+      },
+      "human_author": "kunpeng2.zhang <kunpeng2.zhang@ly.com>"
+    },
+    "s_3582a7ac4d4497": {
+      "agent_id": {
+        "tool": "mock_ai",
+        "id": "ai-thread-1787050324357636100",
+        "model": "unknown"
+      },
+      "human_author": "kunpeng2.zhang <kunpeng2.zhang@ly.com>"
+    },
+    "s_45e0beef6ae395": {
+      "agent_id": {
+        "tool": "mock_ai",
+        "id": "ai-thread-1787050313043996000",
+        "model": "unknown"
+      },
+      "human_author": "kunpeng2.zhang <kunpeng2.zhang@ly.com>"
+    },
+    "s_4f3d841432bd5f": {
+      "agent_id": {
+        "tool": "mock_ai",
+        "id": "ai-thread-1787050456186463100",
+        "model": "unknown"
+      },
+      "human_author": "kunpeng2.zhang <kunpeng2.zhang@ly.com>"
+    },
+    "s_4f7a4595eb9e0d": {
+      "agent_id": {
+        "tool": "mock_ai",
+        "id": "ai-thread-1787050535190938800",
+        "model": "unknown"
+      },
+      "human_author": "kunpeng2.zhang <kunpeng2.zhang@ly.com>"
+    },
+    "s_68e5580b60d4bc": {
+      "agent_id": {
+        "tool": "mock_ai",
+        "id": "ai-thread-1787050312201380200",
+        "model": "unknown"
+      },
+      "human_author": "kunpeng2.zhang <kunpeng2.zhang@ly.com>"
+    },
+    "s_6f45ce81429c16": {
+      "agent_id": {
+        "tool": "mock_ai",
+        "id": "ai-thread-1787050231530352400",
+        "model": "unknown"
+      },
+      "human_author": "kunpeng2.zhang <kunpeng2.zhang@ly.com>"
+    },
+    "s_6fba6a848de13f": {
+      "agent_id": {
+        "tool": "mock_ai",
+        "id": "ai-thread-1787050212114999100",
+        "model": "unknown"
+      },
+      "human_author": "kunpeng2.zhang <kunpeng2.zhang@ly.com>"
+    },
+    "s_91aebe6fd21c65": {
+      "agent_id": {
+        "tool": "mock_ai",
+        "id": "ai-thread-1787050499461899400",
+        "model": "unknown"
+      },
+      "human_author": "kunpeng2.zhang <kunpeng2.zhang@ly.com>"
+    },
+    "s_9b3cb008bad755": {
+      "agent_id": {
+        "tool": "mock_ai",
+        "id": "ai-thread-1787050263335961300",
+        "model": "unknown"
+      },
+      "human_author": "kunpeng2.zhang <kunpeng2.zhang@ly.com>"
+    },
+    "s_a905f5e454d11b": {
+      "agent_id": {
+        "tool": "mock_ai",
+        "id": "ai-thread-1787050264441277500",
+        "model": "unknown"
+      },
+      "human_author": "kunpeng2.zhang <kunpeng2.zhang@ly.com>"
+    },
+    "s_c8e2cbb55ab86b": {
+      "agent_id": {
+        "tool": "mock_ai",
+        "id": "ai-thread-1787050311382944700",
+        "model": "unknown"
+      },
+      "human_author": "kunpeng2.zhang <kunpeng2.zhang@ly.com>"
+    },
+    "s_d04c7995a548e1": {
+      "agent_id": {
+        "tool": "mock_ai",
+        "id": "ai-thread-1787050383078154700",
+        "model": "unknown"
+      },
+      "human_author": "kunpeng2.zhang <kunpeng2.zhang@ly.com>"
+    },
+    "s_d6e04bb4698214": {
+      "agent_id": {
+        "tool": "mock_ai",
+        "id": "ai-thread-1787050120809213800",
+        "model": "unknown"
+      },
+      "human_author": "kunpeng2.zhang <kunpeng2.zhang@ly.com>"
+    },
+    "s_de0cd904c4775a": {
+      "agent_id": {
+        "tool": "mock_ai",
+        "id": "ai-thread-1787050149071372900",
+        "model": "unknown"
+      },
+      "human_author": "kunpeng2.zhang <kunpeng2.zhang@ly.com>"
+    },
+    "s_de2c36f362c553": {
+      "agent_id": {
+        "tool": "mock_ai",
+        "id": "ai-thread-1787050310317351800",
+        "model": "unknown"
+      },
+      "human_author": "kunpeng2.zhang <kunpeng2.zhang@ly.com>"
+    },
+    "s_eb774045fc6449": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a012ed-0c1b-7c40-9478-ca5dd94206e1",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "kunpeng2.zhang <kunpeng2.zhang@ly.com>"
+    },
+    "s_f879f2889c1a59": {
+      "agent_id": {
+        "tool": "mock_ai",
+        "id": "ai-thread-1787050197895674200",
+        "model": "unknown"
+      },
+      "human_author": "kunpeng2.zhang <kunpeng2.zhang@ly.com>"
+    },
+    "s_fb12e00d63b89b": {
+      "agent_id": {
+        "tool": "mock_ai",
+        "id": "ai-thread-1787050552958185300",
+        "model": "unknown"
+      },
+      "human_author": "kunpeng2.zhang <kunpeng2.zhang@ly.com>"
+    }
+  }
+}
