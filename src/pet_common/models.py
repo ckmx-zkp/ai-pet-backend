@@ -420,6 +420,71 @@ class OwnerBaziProfile(TimestampMixin, Base):
     bazi_text: Mapped[str | None] = mapped_column(Text)  # LLM 四柱排盘缓存
 
 
+class FunQuiz(Base):
+    """趣味小测试题库（LLM 每日生成 + 内置种子）。"""
+
+    __tablename__ = "fun_quizzes"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    title: Mapped[str] = mapped_column(String(120), nullable=False)
+    subtitle: Mapped[str] = mapped_column(String(240), nullable=False, default="")
+    payload: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    source: Mapped[str] = mapped_column(String(16), nullable=False, default="seed")
+    quiz_date: Mapped[date | None] = mapped_column(Date)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (Index("ix_fun_quizzes_date_kind", "quiz_date", "kind"),)
+
+
+class FunQuizAttempt(Base):
+    """用户一次作答；result 供回看与分享海报。"""
+
+    __tablename__ = "fun_quiz_attempts"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    device_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("devices.id", ondelete="SET NULL")
+    )
+    quiz_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("fun_quizzes.id", ondelete="CASCADE"), nullable=False
+    )
+    answers: Mapped[list[Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
+    result: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (Index("ix_fun_quiz_attempts_user_created", "user_id", "created_at"),)
+
+
+class NatalChart(TimestampMixin, Base):
+    """简略西洋星盘缓存：一设备一行，生辰只用于计算。"""
+
+    __tablename__ = "natal_charts"
+
+    device_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("devices.id", ondelete="CASCADE"), primary_key=True
+    )
+    birth_date: Mapped[date] = mapped_column(Date, nullable=False)
+    has_time: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    has_place: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    chart: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+
+
 class AgentTask(TimestampMixin, Base):
     """PG SKIP LOCKED 队列表（docs/08 决策，Redis 仅缓存不入队）。
 

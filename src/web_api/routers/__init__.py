@@ -9,8 +9,10 @@ from web_api.routers import (
     internal,
     memories,
     messages,
+    natal,
     peripheral,
     persona,
+    quizzes,
 )
 
 __all__ = [
@@ -22,6 +24,8 @@ __all__ = [
     "internal",
     "memories",
     "messages",
+    "natal",
     "peripheral",
     "persona",
+    "quizzes",
 ]

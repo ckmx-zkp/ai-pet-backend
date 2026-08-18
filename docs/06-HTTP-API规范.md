@@ -183,6 +183,38 @@ KB 条目遵循不可变发布：`POST /admin/kb/zodiac`、`POST /admin/kb/mbti`
 `generating: true` 且对应字段为 null，客户端显示"生成中"空态稍后重查。`sign_fortune` 为全站
 共享内容，`greeting`/`bazi_fortune` 为该设备个性化生成（均异步产出，见 docs/12）。
 
+## 趣味测试与简略星盘
+
+默认只在 App 展示；用户明确选择后才写入记忆。测验题由 worker 每日预生成（每 kind 至多 1 套，
+≤20 题），失败时用内置种子。星盘为测测风格简略版：太阳/月亮/水金火木土 + 有时辰与地点时的上升；
+近星座换座点约 ±1°，不作专业占星。
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/fun-quizzes?kind=&limit&offset` | 可作答测验列表（不含计分键） |
+| GET | `/fun-quizzes/{id}` | 题面详情（不含 scores） |
+| POST | `/fun-quizzes/{id}/submit` | 提交答案；返回结果 + `share_card`；`apply=memory` 时写入当前设备一条记忆 |
+| GET | `/fun-quizzes/attempts/{aid}` | 回看一次作答（含 share_card） |
+| GET/PUT | `/devices/{id}/natal-chart` | 简略星盘；PUT 覆盖计算并缓存；`use_bazi=true` 且八字为公历时可复用生辰 |
+
+### `POST /fun-quizzes/{id}/submit`
+
+```json
+{"answers": ["a", "b", "a"], "device_id": 1, "apply": "none"}
+```
+
+`apply` ∈ `none|memory`。`memory` 必须带已归属的 `device_id`。响应含 `result.title` /
+`result.summary` / `share_card`（海报文案，App 本地绘成图再保存发朋友圈）。
+
+### `PUT /devices/{id}/natal-chart`
+
+```json
+{"birth_date": "1995-11-08", "birth_time": "14:30", "birth_place": "北京", "use_bazi": false}
+```
+
+`birth_time` / `birth_place` 可空：无时辰或无法解析地点时不算上升。生辰只用于当次计算，
+日志不记。响应为各星体的 `sign` + `degree_in_sign` + 一句解读 + `share_card`。
+
 ## 主动播报（E11，设计见 docs/13）
 
 | 方法 | 路径 | 说明 |

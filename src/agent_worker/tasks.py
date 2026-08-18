@@ -11,12 +11,14 @@ from agent_worker.llm import (
     SIGN_KEYS,
     generate_bazi_text,
     generate_device_daily_content,
+    generate_fun_quiz,
     generate_memory_profile,
     generate_sign_fortunes,
     generate_structured_analysis,
 )
 from pet_common.config import get_settings
 from pet_common.dates import today_cn
+from pet_common.fun_quiz import QUIZ_KINDS, public_questions
 from pet_common.models import (
     AgentTask,
     AnalysisResult,
@@ -25,6 +27,7 @@ from pet_common.models import (
     DailySignFortune,
     Device,
     DeviceDailyContent,
+    FunQuiz,
     KBFeedbackCandidate,
     Memory,
     OwnerBaziProfile,
@@ -493,7 +496,59 @@ async def prefill_daily_content(session: AsyncSession, content_date: date) -> di
             )
         )
         enqueued["daily_device_content"] += 1
+    existing_kinds = await _existing_quiz_kinds(session, content_date)
+    missing_kinds = [kind for kind in QUIZ_KINDS if kind not in existing_kinds]
+    if missing_kinds:
+        session.add(
+            AgentTask(
+                kind="fun_quiz_generate",
+                payload={"date": content_date.isoformat(), "kinds": missing_kinds},
+                status="pending",
+            )
+        )
+        enqueued["fun_quiz_generate"] = 1
+    else:
+        enqueued["fun_quiz_generate"] = 0
     return enqueued
+
+
+async def _existing_quiz_kinds(session: AsyncSession, quiz_date: date) -> set[str]:
+    result = await session.execute(select(FunQuiz.kind).where(FunQuiz.quiz_date == quiz_date))
+    return set(result.scalars().all())
+
+
+async def fun_quiz_generate_handler(payload: dict[str, Any], session: AsyncSession) -> None:
+    """每日补齐三类趣味测验；已有的 kind 跳过。"""
+    quiz_date = _task_date(payload)
+    wanted = payload.get("kinds")
+    kinds = [str(item) for item in wanted] if isinstance(wanted, list) else list(QUIZ_KINDS)
+    existing = set(
+        (await session.execute(select(FunQuiz.kind).where(FunQuiz.quiz_date == quiz_date)))
+        .scalars()
+        .all()
+    )
+    settings = get_settings()
+    for kind in kinds:
+        if kind not in QUIZ_KINDS or kind in existing:
+            continue
+        raw = await generate_fun_quiz(settings, kind, quiz_date)
+        questions = public_questions(raw)
+        archetypes = raw.get("archetypes")
+        if len(questions) < 4 or not isinstance(archetypes, dict) or len(archetypes) < 2:
+            raise ValueError("generated quiz failed validation")
+        # public_questions 丢掉了 scores，入库必须保留模型返回的完整 questions
+        raw_questions = raw.get("questions")
+        full_questions = raw_questions[:20] if isinstance(raw_questions, list) else []
+        session.add(
+            FunQuiz(
+                kind=kind,
+                title=str(raw.get("title") or "今日小测试")[:120],
+                subtitle=str(raw.get("subtitle") or "")[:240],
+                payload={"questions": full_questions, "archetypes": archetypes},
+                source="llm",
+                quiz_date=quiz_date,
+            )
+        )
 
 
 async def memory_profile_handler(payload: dict[str, Any], session: AsyncSession) -> None:
@@ -608,4 +663,5 @@ TASK_REGISTRY: dict[str, TaskHandler] = {
     "daily_sign_fortune": daily_sign_fortune_handler,
     "daily_device_content": daily_device_content_handler,
     "memory_profile": memory_profile_handler,
+    "fun_quiz_generate": fun_quiz_generate_handler,
 }

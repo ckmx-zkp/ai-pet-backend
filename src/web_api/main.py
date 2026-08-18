@@ -17,8 +17,10 @@ from web_api.routers import (
     internal,
     memories,
     messages,
+    natal,
     peripheral,
     persona,
+    quizzes,
 )
 
 
@@ -51,6 +53,8 @@ def create_app() -> FastAPI:
     app.include_router(analyses.router, prefix="/api", dependencies=user_dep)
     app.include_router(peripheral.router, prefix="/api", dependencies=user_dep)
     app.include_router(fortune.router, prefix="/api", dependencies=user_dep)
+    app.include_router(quizzes.router, prefix="/api", dependencies=user_dep)
+    app.include_router(natal.router, prefix="/api", dependencies=user_dep)
 
     # 管理台路由：JWT + admin 角色
     app.include_router(admin.router, prefix="/api", dependencies=[Depends(require_admin)])

@@ -309,6 +309,36 @@ companion_impact 说明暂无已确认记忆。"""
     )
 
 
+async def generate_fun_quiz(settings: Settings, kind: str, quiz_date: date) -> dict[str, Any]:
+    """生成一套 ≤20 题的趣味测验（计分规则一并返回，提交时不再调模型）。"""
+    kind_zh = {"psychology": "心理", "astrology": "星座气场", "metaphysics": "玄学宜忌"}.get(
+        kind, kind
+    )
+    system = f"""你是趣味小测试出题人，为 AI 陪伴 App 出一套{kind_zh}向测验。
+只返回 JSON，禁止 Markdown。题量 6～12 题（最多 20）。必须是娱乐向，不得诊断疾病、
+不得询问真实生日/身份证/住址。JSON：
+{{
+  "title": "不超过16字",
+  "subtitle": "不超过24字",
+  "questions": [
+    {{"id": "q1", "prompt": "题干", "options": [
+      {{"key": "a", "text": "选项", "scores": {{"alpha": 2, "beta": 0}}}},
+      {{"key": "b", "text": "选项", "scores": {{"alpha": 0, "beta": 2}}}}
+    ]}}
+  ],
+  "archetypes": {{
+    "alpha": {{"title": "结果名", "summary": "一句话", "share_line": "适合发朋友圈的一句"}},
+    "beta": {{"title": "结果名", "summary": "一句话", "share_line": "适合发朋友圈的一句"}}
+  }}
+}}
+每题 2～4 个选项，key 用 a/b/c/d。scores 的键必须覆盖全部 archetype。"""
+    return await _chat_json(
+        settings,
+        system,
+        json.dumps({"date": quiz_date.isoformat(), "kind": kind}, ensure_ascii=False),
+    )
+
+
 async def generate_device_daily_content(
     settings: Settings, context: dict[str, Any]
 ) -> dict[str, Any]:

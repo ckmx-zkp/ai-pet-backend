@@ -733,14 +733,18 @@ async def test_prefill_enqueues_missing_l1_and_l2(monkeypatch: pytest.MonkeyPatc
     ) -> set[int]:
         return {2}  # 设备 2 当日 greeting 已存在：幂等跳过
 
+    async def fake_quiz_kinds(session: AsyncSession, quiz_date: date) -> set[str]:
+        return set()
+
     monkeypatch.setattr(worker_tasks, "_existing_fortune_signs", fake_existing)
     monkeypatch.setattr(worker_tasks, "_claimed_device_ids", fake_claimed)
     monkeypatch.setattr(worker_tasks, "_devices_with_content", fake_have)
+    monkeypatch.setattr(worker_tasks, "_existing_quiz_kinds", fake_quiz_kinds)
 
     stats = await worker_tasks.prefill_daily_content(
         cast(AsyncSession, FakeWorkerSession(store)), TODAY
     )
-    assert stats == {"daily_sign_fortune": 1, "daily_device_content": 2}
+    assert stats == {"daily_sign_fortune": 1, "daily_device_content": 2, "fun_quiz_generate": 1}
     tasks = [obj for obj in store.added if isinstance(obj, AgentTask)]
     assert tasks[0].kind == "daily_sign_fortune"
     assert tasks[0].payload == {"date": TODAY.isoformat()}
@@ -765,14 +769,24 @@ async def test_prefill_idempotent_when_content_complete(
     ) -> set[int]:
         return {1, 2}
 
+    async def fake_quiz_kinds(session: AsyncSession, quiz_date: date) -> set[str]:
+        from pet_common.fun_quiz import QUIZ_KINDS
+
+        return set(QUIZ_KINDS)
+
     monkeypatch.setattr(worker_tasks, "_existing_fortune_signs", fake_existing)
     monkeypatch.setattr(worker_tasks, "_claimed_device_ids", fake_claimed)
     monkeypatch.setattr(worker_tasks, "_devices_with_content", fake_have)
+    monkeypatch.setattr(worker_tasks, "_existing_quiz_kinds", fake_quiz_kinds)
 
     stats = await worker_tasks.prefill_daily_content(
         cast(AsyncSession, FakeWorkerSession(store)), TODAY
     )
-    assert stats == {"daily_sign_fortune": 0, "daily_device_content": 0}
+    assert stats == {
+        "daily_sign_fortune": 0,
+        "daily_device_content": 0,
+        "fun_quiz_generate": 0,
+    }
     assert store.added == []  # 内容齐全：不入队
 
 
