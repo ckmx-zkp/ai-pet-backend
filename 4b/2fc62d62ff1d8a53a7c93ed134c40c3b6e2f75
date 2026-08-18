@@ -1,0 +1,19 @@
+docs/09-部署进度与运维.md
+  s_ada4240553a2f0::t_e4fc62ae6e54fc 179-184
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "4b2fc62d62ff1d8a53a7c93ed134c40c3b6e2f75",
+  "prompts": {},
+  "sessions": {
+    "s_ada4240553a2f0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01302-988c-7402-9070-52b689d4c5ca",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "kunpeng2.zhang <kunpeng2.zhang@ly.com>"
+    }
+  }
+}
