@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pet_common.db import get_session
-from pet_common.models import Device, MBTIKBEntry, PersonaProfile, ZodiacKBEntry
+from pet_common.models import Device, MBTIKBEntry, OwnerProfile, PersonaProfile, ZodiacKBEntry
 from test_devices import auth_headers
 from web_api.main import create_app
 from web_api.routers import persona as persona_router
@@ -24,12 +24,23 @@ class FakeSession:
             capabilities={},
         )
         self.profile: PersonaProfile | None = None
+        self.owner: OwnerProfile | None = None
 
     def add(self, obj: object) -> None:
         if isinstance(obj, PersonaProfile):
             self.profile = obj
+        if isinstance(obj, OwnerProfile):
+            self.owner = obj
+
+    async def get(self, model: type[object], ident: object) -> object | None:
+        if model is OwnerProfile and ident == 1:
+            return self.owner
+        return None
 
     async def commit(self) -> None:
+        pass
+
+    async def refresh(self, obj: object) -> None:
         pass
 
 
@@ -83,10 +94,14 @@ def client(store: FakeSession, monkeypatch: pytest.MonkeyPatch) -> TestClient:
             return MBTIKBEntry(key="INFP", version=4, status="published", payload={})
         return None
 
+    from web_api.routers import owner as owner_router
+
     monkeypatch.setattr(persona_router, "_get_own_device", fake_get_own_device)
     monkeypatch.setattr(persona_router, "get_profile", fake_get_profile)
     monkeypatch.setattr(persona_router, "get_zodiac_entry", fake_get_zodiac)
     monkeypatch.setattr(persona_router, "get_mbti_entry", fake_get_mbti)
+    monkeypatch.setattr(owner_router, "get_zodiac_entry", fake_get_zodiac)
+    monkeypatch.setattr(owner_router, "get_mbti_entry", fake_get_mbti)
 
     async def override_get_session() -> AsyncIterator[AsyncSession]:
         yield cast(AsyncSession, store)
@@ -215,26 +230,39 @@ def test_get_questionnaire_returns_twenty_questions(client: TestClient) -> None:
     assert "a_trait" not in body["questions"][0]
 
 
-def test_post_questionnaire_writes_scored_mbti(client: TestClient, store: FakeSession) -> None:
+def test_post_questionnaire_writes_owner_not_persona(
+    client: TestClient, store: FakeSession
+) -> None:
     response = client.post(
         "/api/devices/1/persona/questionnaire",
         json={"sun_sign": "pisces", "answers": ["b"] * 20},
         headers=auth_headers(),
     )
     assert response.status_code == 200
-    assert response.json()["mbti"] == "INFP"
-    assert response.json()["sun_sign"] == "pisces"
-    assert store.profile is not None
-    assert store.profile.mbti == "INFP"
+    body = response.json()
+    assert body["mbti"] == "INFP"
+    assert body["sun_sign"] == "pisces"
+    assert body["user_id"] == 1
+    assert store.profile is None
+    assert store.owner is not None
+    assert store.owner.mbti == "INFP"
+    assert store.owner.sun_sign == "pisces"
 
 
-def test_post_questionnaire_requires_sign_when_unset(client: TestClient) -> None:
+def test_post_questionnaire_allows_mbti_without_sign(
+    client: TestClient, store: FakeSession
+) -> None:
     response = client.post(
         "/api/devices/1/persona/questionnaire",
         json={"answers": ["a"] * 20},
         headers=auth_headers(),
     )
-    assert response.status_code == 422
+    assert response.status_code == 200
+    assert response.json()["mbti"] == "ESTJ"
+    assert response.json()["sun_sign"] is None
+    assert store.profile is None
+    assert store.owner is not None
+    assert store.owner.mbti == "ESTJ"
 
 
 def test_preview_persona_does_not_write(

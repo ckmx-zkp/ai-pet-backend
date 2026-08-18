@@ -343,11 +343,11 @@ async def generate_device_daily_content(
     settings: Settings, context: dict[str, Any]
 ) -> dict[str, Any]:
     """生成设备级当日内容：greeting（恒产）与 bazi_fortune（有八字时，四维度）。"""
-    system = """你是 AI 陪伴宠物的每日内容生成器。输入为该设备的人设（星座/MBTI/档案）、
-近期摘要、已确认记忆、当日星座运势与主人八字排盘（可能为 null）。
+    system = """你是 AI 陪伴宠物的每日内容生成器。输入含该设备宠物人设（口吻）、
+主人太阳星座/MBTI（可能为 null）、近期摘要、已确认记忆、主人星座的当日运势与主人八字排盘。
 只返回一个 JSON 对象，禁止 Markdown。JSON 结构：
 {
-  "greeting": "今天开场时可以自然提到的素材，1~2 句，人设口吻，自然引用运势或记忆，不堆砌",
+  "greeting": "今天开场素材，1~2 句，宠物口吻，可引主人运势或记忆，勿把主人星座说成自己的",
   "bazi_fortune": {"overall": "一句总述", "career": "事业", "wealth": "财运",
     "study": "学业", "love": "情感"}
 }

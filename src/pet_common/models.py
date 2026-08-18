@@ -153,8 +153,26 @@ class PersonaProfile(Base):
     )
 
     __table_args__ = (
-        Index("uq_persona_profiles_device_id", "device_id", unique=True),  # 一设备一人设
+        Index("uq_persona_profiles_device_id", "device_id", unique=True),  # 一设备一宠物人设
         Index("ix_persona_profiles_user_id", "user_id"),
+    )
+
+
+class OwnerProfile(TimestampMixin, Base):
+    """主人档案：一用户账号一行，该账号下全部设备共享。
+
+    问卷 / 趣味测试 / 星盘太阳写入本表；不得写入 persona_profiles（宠物身份）。
+    """
+
+    __tablename__ = "owner_profiles"
+
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    sun_sign: Mapped[str | None] = mapped_column(String(32))
+    mbti: Mapped[str | None] = mapped_column(String(8))
+    quiz_results: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )
 
 
@@ -402,15 +420,15 @@ class DeviceDailyContent(Base):
 
 
 class OwnerBaziProfile(TimestampMixin, Base):
-    """主人八字（E10/docs/12，敏感数据）：一设备一行；原始生辰只供 worker 生成使用，
+    """主人八字（E10/docs/12，敏感数据）：一用户账号一行；原始生辰只供 worker 生成使用，
 
     不进 persona_pack/C5/日志；bazi_text 为 LLM 排盘缓存，出生信息变更时清空重排。
     """
 
     __tablename__ = "owner_bazi_profiles"
 
-    device_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("devices.id", ondelete="CASCADE"), primary_key=True
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
     calendar_type: Mapped[str] = mapped_column(String(8), nullable=False)  # solar|lunar
     birth_date: Mapped[date] = mapped_column(Date, nullable=False)
@@ -470,12 +488,12 @@ class FunQuizAttempt(Base):
 
 
 class NatalChart(TimestampMixin, Base):
-    """简略西洋星盘缓存：一设备一行，生辰只用于计算。"""
+    """简略西洋星盘缓存：一用户账号一行，生辰只用于计算。"""
 
     __tablename__ = "natal_charts"
 
-    device_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("devices.id", ondelete="CASCADE"), primary_key=True
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
     birth_date: Mapped[date] = mapped_column(Date, nullable=False)
     has_time: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

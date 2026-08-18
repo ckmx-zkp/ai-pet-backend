@@ -16,6 +16,7 @@ from pet_common.models import (
     PersonaProfile,
     ZodiacKBEntry,
 )
+from web_api.owner_service import get_owner_profile, owner_prompt_fragment
 
 
 def _latest_or_pinned(statement: Select[Any], kb_version: int | None) -> Select[Any]:
@@ -146,8 +147,10 @@ def _payload_text(payload: object, key: str) -> str | None:
     return None
 
 
-async def get_daily_guidance(session: AsyncSession, device_id: int, sun_sign: str) -> list[str]:
-    """当日个性化引导语（E10/docs/12 §6）：greeting + 该设备星座的当日运势总述。
+async def get_daily_guidance(
+    session: AsyncSession, device_id: int, sun_sign: str | None
+) -> list[str]:
+    """当日个性化引导语（E10/docs/12 §6）：greeting + 主人星座的当日运势总述。
 
     当日内容缺失时回退最近一期（昨日及以前）内容，并标注"今日早些时候"语义；
     全无内容才返回空列表，不阻塞编译。引导语由模型组织语言，不是固定 TTS 文本。
@@ -182,24 +185,26 @@ async def get_daily_guidance(session: AsyncSession, device_id: int, sun_sign: st
             fragments.append(f"今天开场时可以延续今日早些时候的素材：{greeting_text}")
         else:
             fragments.append(f"今天开场时可以自然地提到：{greeting_text}")
-    fortune_payload = await session.scalar(
-        select(DailySignFortune.payload).where(
-            DailySignFortune.fortune_date == today, DailySignFortune.sign == sun_sign
-        )
-    )
-    fortune_overall = _payload_text(fortune_payload, "overall")
+    fortune_overall = None
     fortune_stale = False
-    if fortune_overall is None:
-        fallback_fortune = await session.scalar(
-            select(DailySignFortune.payload)
-            .where(
-                DailySignFortune.fortune_date < today, DailySignFortune.sign == sun_sign
+    if sun_sign:
+        fortune_payload = await session.scalar(
+            select(DailySignFortune.payload).where(
+                DailySignFortune.fortune_date == today, DailySignFortune.sign == sun_sign
             )
-            .order_by(DailySignFortune.fortune_date.desc())
-            .limit(1)
         )
-        fortune_overall = _payload_text(fallback_fortune, "overall")
-        fortune_stale = fortune_overall is not None
+        fortune_overall = _payload_text(fortune_payload, "overall")
+        if fortune_overall is None:
+            fallback_fortune = await session.scalar(
+                select(DailySignFortune.payload)
+                .where(
+                    DailySignFortune.fortune_date < today, DailySignFortune.sign == sun_sign
+                )
+                .order_by(DailySignFortune.fortune_date.desc())
+                .limit(1)
+            )
+            fortune_overall = _payload_text(fallback_fortune, "overall")
+            fortune_stale = fortune_overall is not None
     if fortune_overall is not None:
         if fortune_stale:
             fragments.append(f"今天聊天时可以延续今日早些时候提到的运势：{fortune_overall}")
@@ -222,8 +227,11 @@ async def compile_profile(session: AsyncSession, profile: PersonaProfile) -> dic
     if element is None or mbti is None:
         raise HTTPException(status.HTTP_409_CONFLICT, detail="published persona KB unavailable")
 
-    # E10：当日 greeting 与星座运势总述以引导语追加到片段末尾（docs/12 §6，契约 7 字段不变）
-    daily_guidance = await get_daily_guidance(session, profile.device_id, profile.sun_sign)
+    # E10：当日 greeting 与**主人**星座运势总述以引导语追加到片段末尾（docs/12 §6）
+    owner = await get_owner_profile(session, profile.user_id)
+    owner_sign = owner.sun_sign if owner is not None else None
+    owner_line = owner_prompt_fragment(owner) if owner is not None else None
+    daily_guidance = await get_daily_guidance(session, profile.device_id, owner_sign)
     compiled = compile_persona(
         _as_kb_entry(element, "element"),
         _as_kb_entry(sign, "sign"),
@@ -240,6 +248,7 @@ async def compile_profile(session: AsyncSession, profile: PersonaProfile) -> dic
         "kb_version": compiled["kb_version"],
         "system_prompt_fragments": [
             _identity_fragment(profile.sun_sign, profile.mbti),
+            *([owner_line] if owner_line else []),
             *compiled["prompt_fragments"],
             *daily_guidance,
         ],

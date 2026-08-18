@@ -12,6 +12,7 @@ from pet_common.db import get_session
 from pet_common.fun_quiz import public_questions, score_fun_quiz, share_card_for
 from pet_common.models import FunQuiz, FunQuizAttempt, Memory
 from web_api.deps import get_current_claims
+from web_api.owner_service import get_or_create_owner_profile, record_fun_quiz_result
 from web_api.queue import enqueue_memory_profile
 from web_api.routers.devices import _current_user_id, _get_own_device
 
@@ -170,6 +171,9 @@ async def submit_fun_quiz(
         result=result,
     )
     session.add(attempt)
+    await session.flush()
+    owner = await get_or_create_owner_profile(session, user_id)
+    record_fun_quiz_result(owner, quiz.kind, scored, quiz.id, attempt.id)
     await session.commit()
     await session.refresh(attempt)
     return AttemptOut(

@@ -8,9 +8,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pet_common.db import get_session
-from pet_common.models import NatalChart, OwnerBaziProfile
+from pet_common.models import NatalChart
 from pet_common.natal import compute_natal_chart, resolve_city
 from web_api.deps import get_current_claims
+from web_api.owner_service import get_or_create_owner_profile, get_owner_bazi
 from web_api.routers.devices import _current_user_id, _get_own_device
 
 router = APIRouter(prefix="/devices/{device_id}/natal-chart", tags=["natal"])
@@ -54,8 +55,9 @@ def _to_out(device_id: int, chart: dict[str, Any]) -> NatalOut:
 
 @router.get("", response_model=NatalOut)
 async def get_natal_chart(device_id: int, claims: ClaimsDep, session: SessionDep) -> NatalOut:
-    await _get_own_device(session, device_id, _current_user_id(claims))
-    row = await session.get(NatalChart, device_id)
+    user_id = _current_user_id(claims)
+    await _get_own_device(session, device_id, user_id)
+    row = await session.get(NatalChart, user_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="natal chart not found")
     return _to_out(device_id, row.chart)
@@ -65,12 +67,13 @@ async def get_natal_chart(device_id: int, claims: ClaimsDep, session: SessionDep
 async def put_natal_chart(
     device_id: int, body: NatalPutIn, claims: ClaimsDep, session: SessionDep
 ) -> NatalOut:
-    await _get_own_device(session, device_id, _current_user_id(claims))
+    user_id = _current_user_id(claims)
+    await _get_own_device(session, device_id, user_id)
     birth_date = body.birth_date
     birth_time = body.birth_time
     place = body.birth_place
     if body.use_bazi:
-        bazi = await session.get(OwnerBaziProfile, device_id)
+        bazi = await get_owner_bazi(session, user_id)
         if bazi is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="bazi not recorded")
         if bazi.calendar_type != "solar":
@@ -90,10 +93,10 @@ async def put_natal_chart(
         latitude=coords[0] if coords else None,
         longitude=coords[1] if coords else None,
     )
-    row = await session.get(NatalChart, device_id)
+    row = await session.get(NatalChart, user_id)
     if row is None:
         row = NatalChart(
-            device_id=device_id,
+            user_id=user_id,
             birth_date=birth_date,
             has_time=birth_time is not None,
             has_place=coords is not None,
@@ -105,5 +108,11 @@ async def put_natal_chart(
         row.has_time = birth_time is not None
         row.has_place = coords is not None
         row.chart = computed
+    bodies = computed.get("bodies")
+    sun_body = bodies.get("sun") if isinstance(bodies, dict) else None
+    sun = sun_body.get("sign") if isinstance(sun_body, dict) else None
+    if isinstance(sun, str) and sun:
+        owner = await get_or_create_owner_profile(session, user_id)
+        owner.sun_sign = sun
     await session.commit()
     return _to_out(device_id, computed)

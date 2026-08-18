@@ -31,6 +31,7 @@ from pet_common.models import (
     KBFeedbackCandidate,
     Memory,
     OwnerBaziProfile,
+    OwnerProfile,
     PersonaProfile,
 )
 
@@ -273,11 +274,12 @@ async def _device_content(
     return result.scalar_one_or_none()
 
 
-async def _bazi_profile(session: AsyncSession, device_id: int) -> OwnerBaziProfile | None:
-    result = await session.execute(
-        select(OwnerBaziProfile).where(OwnerBaziProfile.device_id == device_id)
-    )
-    return result.scalar_one_or_none()
+async def _bazi_profile(session: AsyncSession, user_id: int) -> OwnerBaziProfile | None:
+    return await session.get(OwnerBaziProfile, user_id)
+
+
+async def _owner_profile(session: AsyncSession, user_id: int) -> OwnerProfile | None:
+    return await session.get(OwnerProfile, user_id)
 
 
 async def _recent_summary(session: AsyncSession, device_id: int) -> AnalysisResult | None:
@@ -359,9 +361,13 @@ async def daily_device_content_handler(payload: dict[str, Any], session: AsyncSe
     content_date = _task_date(payload)
     profile = await _profile(session, device_id)
     if profile is None or profile.sun_sign is None:
-        return  # 未配置人设：无可生成内容，直接完成，避免懒触发反复入队空转
-    sign_fortune = await _sign_fortune(session, content_date, profile.sun_sign)
-    if sign_fortune is None:
+        return  # 未配置宠物人设：无可生成内容，直接完成，避免懒触发反复入队空转
+    owner = await _owner_profile(session, profile.user_id)
+    owner_sign = owner.sun_sign if owner is not None else None
+    sign_fortune = (
+        await _sign_fortune(session, content_date, owner_sign) if owner_sign is not None else None
+    )
+    if owner_sign is not None and sign_fortune is None:
         session.add(
             AgentTask(
                 kind="daily_sign_fortune",
@@ -370,11 +376,11 @@ async def daily_device_content_handler(payload: dict[str, Any], session: AsyncSe
             )
         )
         raise TaskDeferredError(
-            f"L1 sign fortune missing: date={content_date.isoformat()} sign={profile.sun_sign}"
+            f"L1 sign fortune missing: date={content_date.isoformat()} sign={owner_sign}"
         )
 
     greeting_row = await _device_content(session, device_id, content_date, "greeting")
-    bazi = await _bazi_profile(session, device_id)
+    bazi = await _bazi_profile(session, profile.user_id)
     bazi_row = (
         await _device_content(session, device_id, content_date, "bazi_fortune")
         if bazi is not None
@@ -408,7 +414,13 @@ async def daily_device_content_handler(payload: dict[str, Any], session: AsyncSe
         },
         "recent_summary": (summary.payload.get("summary") if summary is not None else None),
         "memories": [memory.content[:200] for memory in memories],
-        "sign_fortune": {key: sign_fortune.payload.get(key) for key in _FORTUNE_KEYS},
+        "sign_fortune": (
+            {key: sign_fortune.payload.get(key) for key in _FORTUNE_KEYS}
+            if sign_fortune is not None
+            else None
+        ),
+        "owner_sign": owner_sign,
+        "owner_mbti": owner.mbti if owner is not None else None,
         "owner_bazi": bazi.bazi_text if bazi is not None else None,
     }
     result = await generate_device_daily_content(settings, context)

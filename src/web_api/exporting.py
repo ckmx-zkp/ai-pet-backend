@@ -13,6 +13,7 @@ from pet_common.models import (
     DeviceDailyContent,
     Memory,
     OwnerBaziProfile,
+    OwnerProfile,
     PersonaProfile,
 )
 
@@ -24,9 +25,15 @@ async def build_export_bundle(session: AsyncSession, device: Device) -> dict[str
     profile = await session.scalar(
         select(PersonaProfile).where(PersonaProfile.device_id == device.id)
     )
-    bazi = await session.scalar(
-        select(OwnerBaziProfile).where(OwnerBaziProfile.device_id == device.id)
-    )
+    owner = None
+    bazi = None
+    if device.user_id is not None:
+        owner = await session.scalar(
+            select(OwnerProfile).where(OwnerProfile.user_id == device.user_id)
+        )
+        bazi = await session.scalar(
+            select(OwnerBaziProfile).where(OwnerBaziProfile.user_id == device.user_id)
+        )
     memories = (
         (
             await session.execute(
@@ -88,6 +95,15 @@ async def build_export_bundle(session: AsyncSession, device: Device) -> dict[str
         "exported_at": datetime.now(UTC).isoformat(),
         "device": {"id": device.id, "name": device.name, "device_uid_redacted": True},
         "persona": persona,
+        "owner": (
+            {
+                "sun_sign": owner.sun_sign,
+                "mbti": owner.mbti,
+                "quiz_results": owner.quiz_results,
+            }
+            if owner is not None
+            else None
+        ),
         "bazi_recorded": bazi is not None,
         "memories": [
             {

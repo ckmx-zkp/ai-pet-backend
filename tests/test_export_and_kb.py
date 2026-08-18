@@ -104,6 +104,7 @@ async def test_export_bundle_redacts_device_uid_and_bazi(monkeypatch: pytest.Mon
     assert bundle["device"]["device_uid_redacted"] is True
     assert "device_uid" not in bundle["device"]
     assert bundle["bazi_recorded"] is False
+    assert bundle["owner"] is None
     assert "birth_date" not in bundle
 
 

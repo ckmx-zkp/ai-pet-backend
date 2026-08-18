@@ -71,15 +71,21 @@ xiaozhi 未接入前恒为 `false`。
 | GET | `/admin/devices/{id}/analyses?kind=&limit&offset` | 分析结果列表 |
 | GET | `/admin/devices/{id}/peripheral` | 外设状态快照 |
 
-### `POST /devices/{id}/persona/questionnaire`
+### 主人 vs 宠物（主体钉死）
+
+- **宠物人设**挂设备：`GET/PUT /devices/{id}/persona` 的 `sun_sign` / `mbti` / `dossier` 只描述这只宠物，编译进 `persona_pack` 身份行。
+- **主人档案**挂用户账号：一账号一份，该账号下全部设备共享。问卷、趣味测试、八字、星盘写入主人，不改宠物人设。
+- 日运 L1 星座键取 **主人** `sun_sign`；问候语仍按该设备宠物口吻生成。
+
+### `GET/PUT /owner` 与问卷
 
 ```json
 {"sun_sign": "scorpio", "answers": ["a", "b", "a", "...共 20 项"]}
 ```
 
-`answers` 必须与 `GET .../questionnaire` 题面等长，每项只能是 `a` 或 `b`。`sun_sign` 在
-尚未配置人设时必填；已有人设时可省略（沿用原星座）。响应与 PUT persona 相同。客户端
-不得自行映射 MBTI。平票时该维取 E/S/T/J。
+`answers` 必须与问卷题面等长，每项只能是 `a` 或 `b`。`sun_sign` 可选：提供则写入主人太阳星座（须为已发布键）。响应为主人档案，**不写** `persona_profiles`。客户端不得自行映射 MBTI。平票时该维取 E/S/T/J。
+
+`GET /devices/{id}/persona/questionnaire` 与 `POST .../questionnaire` 仍可用（须设备归属），语义与 `/owner/questionnaire` 相同，只是用设备校验登录用户。
 
 ### `POST /devices/{id}/persona/preview`
 
@@ -93,6 +99,7 @@ worker。未发布的星座/MBTI 仍 422。
   "exported_at": "2026-08-18T12:00:00+00:00",
   "device": {"id": 1, "name": "星仔", "device_uid_redacted": true},
   "persona": {"sun_sign": "scorpio", "mbti": "ENFP", "follow_latest": true, "kb_version": 3},
+  "owner": {"sun_sign": "capricorn", "mbti": "INFP", "quiz_results": {}},
   "bazi_recorded": true,
   "memories": [{"id": 1, "title": "...", "content": "...", "status": "active", "tags": []}],
   "messages": [{"id": 1, "role": "user", "content_redacted": "...", "created_at": "..."}],
@@ -109,9 +116,12 @@ worker。未发布的星座/MBTI 仍 422。
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET/PUT | `/devices/{id}/persona` | 读/写星座、MBTI、忌口、钉扎与稳定角色档案 `dossier`（身份/背景/角色/目标/进化规则/关系） |
-| GET | `/devices/{id}/persona/questionnaire` | 返回后端问卷题面（20 题，四维各 5）；客户端只展示，不算型 |
-| POST | `/devices/{id}/persona/questionnaire` | 提交 `answers`（`a`/`b` 恰好 20 项）；**MBTI 只在 backend 计分**；写入人设并返回与 PUT 相同的 persona 对象 |
+| GET/PUT | `/devices/{id}/persona` | 读/写**宠物**星座、MBTI、忌口、钉扎与稳定角色档案 `dossier`；仅直选，问卷不走此表 |
+| GET/PUT | `/owner` | 当前账号主人档案：`sun_sign` / `mbti` / `quiz_results`；未建档 GET 404 |
+| GET | `/owner/questionnaire` | 主人 MBTI 问卷题面（20 题，四维各 5）；客户端只展示，不算型 |
+| POST | `/owner/questionnaire` | 提交 `answers`；**MBTI 只在 backend 计分**；写入主人档案并返回 `/owner` 对象 |
+| GET | `/devices/{id}/persona/questionnaire` | 与 `/owner/questionnaire` 相同（设备归属校验） |
+| POST | `/devices/{id}/persona/questionnaire` | 与 `/owner/questionnaire` 相同；**写入主人，不改宠物人设** |
 | POST | `/devices/{id}/persona/preview` | 编译预览：body 同 PUT，**不改库**，返回固定 7 字段 `persona_pack` |
 | GET | `/admin/kb/zodiac?limit&offset` | 列表条目 |
 | POST/PUT | `/admin/kb/zodiac/{id}` | 编辑 draft |
@@ -153,7 +163,7 @@ KB 条目遵循不可变发布：`POST /admin/kb/zodiac`、`POST /admin/kb/mbti`
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET/PUT | `/devices/{id}/bazi` | 主人八字读写；未录入 GET 返回 404；PUT 覆盖写并触发当日 `bazi_fortune` 重生成 |
+| GET/PUT | `/devices/{id}/bazi` | 主人八字读写（账号一份，经任一已归属设备访问）；未录入 GET 返回 404；PUT 覆盖写并触发该账号下已认领设备当日 `bazi_fortune` 重生成 |
 | GET | `/devices/{id}/fortune/daily?date=` | 当日运势聚合；`date` 缺省为今天；当日内容缺失时后台懒入队、字段返回 null |
 | GET | `/admin/devices/{id}/fortune/daily?date=` | 运营核对用当日运势聚合（只读，与用户版同结构同语义，不触发懒入队） |
 
@@ -179,7 +189,8 @@ KB 条目遵循不可变发布：`POST /admin/kb/zodiac`、`POST /admin/kb/mbti`
 }
 ```
 
-设备未配置人设（无星座）返回 404；未录入八字时 `bazi_fortune` 为 null；当日内容尚未生成时
+设备未配置**宠物**人设（无星座）返回 404。`sign` / `sign_fortune` 取主人 `sun_sign`（未录入则为
+null，不回退宠物星座）。未录入八字时 `bazi_fortune` 为 null；当日内容尚未生成时
 `generating: true` 且对应字段为 null，客户端显示"生成中"空态稍后重查。`sign_fortune` 为全站
 共享内容，`greeting`/`bazi_fortune` 为该设备个性化生成（均异步产出，见 docs/12）。
 
@@ -195,7 +206,7 @@ KB 条目遵循不可变发布：`POST /admin/kb/zodiac`、`POST /admin/kb/mbti`
 | GET | `/fun-quizzes/{id}` | 题面详情（不含 scores） |
 | POST | `/fun-quizzes/{id}/submit` | 提交答案；返回结果 + `share_card`；`apply=memory` 时写入当前设备一条记忆 |
 | GET | `/fun-quizzes/attempts/{aid}` | 回看一次作答（含 share_card） |
-| GET/PUT | `/devices/{id}/natal-chart` | 简略星盘；PUT 覆盖计算并缓存；`use_bazi=true` 且八字为公历时可复用生辰 |
+| GET/PUT | `/devices/{id}/natal-chart` | 简略星盘（账号一份）；PUT 覆盖计算并缓存，并回写主人 `sun_sign`；`use_bazi=true` 且八字为公历时可复用生辰 |
 
 ### `POST /fun-quizzes/{id}/submit`
 
@@ -203,7 +214,8 @@ KB 条目遵循不可变发布：`POST /admin/kb/zodiac`、`POST /admin/kb/mbti`
 {"answers": ["a", "b", "a"], "device_id": 1, "apply": "none"}
 ```
 
-`apply` ∈ `none|memory`。`memory` 必须带已归属的 `device_id`。响应含 `result.title` /
+`apply` ∈ `none|memory`。`memory` 必须带已归属的 `device_id`。无论 `apply`，作答都会写入当前
+账号 `owner_profiles.quiz_results[kind]`（最近一次）。响应含 `result.title` /
 `result.summary` / `share_card`（海报文案，App 本地绘成图再保存发朋友圈）。
 
 ### `PUT /devices/{id}/natal-chart`

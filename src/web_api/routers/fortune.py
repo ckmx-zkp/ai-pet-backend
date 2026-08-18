@@ -24,7 +24,14 @@ from pet_common.models import (
     DeviceDailyContent,
     OwnerBaziProfile,
 )
+from pet_common.natal import compute_natal_chart
 from web_api.deps import get_current_claims
+from web_api.owner_service import (
+    claimed_device_ids_for_user,
+    get_or_create_owner_profile,
+    get_owner_bazi,
+    get_owner_profile,
+)
 from web_api.persona_service import get_profile
 from web_api.routers.devices import _current_user_id, _get_own_device
 
@@ -70,7 +77,7 @@ class DailyFortuneOut(BaseModel):
     """当日运势聚合（docs/06）：缺内容字段为 null 且 generating=true。"""
 
     date: date
-    sign: str
+    sign: str | None
     sign_fortune: FortuneDimensions | None
     greeting: str | None
     bazi_fortune: FortuneDimensions | None
@@ -82,11 +89,8 @@ def _today() -> date:
     return today_cn()
 
 
-async def _bazi_profile(session: AsyncSession, device_id: int) -> OwnerBaziProfile | None:
-    result = await session.execute(
-        select(OwnerBaziProfile).where(OwnerBaziProfile.device_id == device_id)
-    )
-    return result.scalar_one_or_none()
+async def _bazi_profile(session: AsyncSession, user_id: int) -> OwnerBaziProfile | None:
+    return await get_owner_bazi(session, user_id)
 
 
 async def _sign_fortune(
@@ -161,7 +165,7 @@ def _bazi_out(row: OwnerBaziProfile) -> BaziOut:
 async def get_bazi(device_id: int, claims: ClaimsDep, session: SessionDep) -> BaziOut:
     """读取主人八字；未录入返回 404。"""
     await _get_own_device(session, device_id, _current_user_id(claims))
-    row = await _bazi_profile(session, device_id)
+    row = await _bazi_profile(session, _current_user_id(claims))
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="bazi not recorded")
     return _bazi_out(row)
@@ -175,10 +179,10 @@ async def put_bazi(device_id: int, body: BaziIn, claims: ClaimsDep, session: Ses
     """
     user_id = _current_user_id(claims)
     await _get_own_device(session, device_id, user_id)
-    row = await _bazi_profile(session, device_id)
+    row = await _bazi_profile(session, user_id)
     if row is None:
         row = OwnerBaziProfile(
-            device_id=device_id,
+            user_id=user_id,
             calendar_type=body.calendar_type,
             birth_date=body.birth_date,
             birth_time=body.birth_time,
@@ -198,17 +202,26 @@ async def put_bazi(device_id: int, body: BaziIn, claims: ClaimsDep, session: Ses
     if changed:
         row.bazi_text = None  # 出生信息变更：排盘缓存作废重排
 
+    if body.calendar_type == "solar":
+        sun = compute_natal_chart(body.birth_date)["bodies"]["sun"]["sign"]
+        owner = await get_or_create_owner_profile(session, user_id)
+        owner.sun_sign = str(sun)
+
     today = _today()
-    stale = await _daily_content(session, device_id, today, "bazi_fortune")
-    if stale is not None:
-        await session.delete(stale)
-    _enqueue_device_content(session, device_id, today)
+    device_ids = await claimed_device_ids_for_user(session, user_id)
+    if device_id not in device_ids:
+        device_ids.append(device_id)
+    for did in device_ids:
+        stale = await _daily_content(session, did, today, "bazi_fortune")
+        if stale is not None:
+            await session.delete(stale)
+        _enqueue_device_content(session, did, today)
     session.add(
         AuditLog(
             actor=f"user:{user_id}",
             action="bazi_upsert",
-            target_type="device",
-            target_id=str(device_id),
+            target_type="user",
+            target_id=str(user_id),
             detail={"changed_fields": changed},
         )
     )
@@ -225,18 +238,23 @@ async def get_daily_fortune(
 ) -> DailyFortuneOut:
     """当日运势聚合：星座四维度 + greeting + 八字四维度（docs/06 契约语义）。
 
-    设备未配置人设（无星座）404；未录八字 bazi_fortune=null；当日内容缺失时
-    懒入队、对应字段 null、generating=true。
+    设备未配置宠物人设（无星座）404；sign 取主人太阳星座，未录入则为 null。
+    未录八字 bazi_fortune=null；当日内容缺失时懒入队、对应字段 null、generating=true。
     """
-    await _get_own_device(session, device_id, _current_user_id(claims))
+    user_id = _current_user_id(claims)
+    await _get_own_device(session, device_id, user_id)
     profile = await get_profile(session, device_id)
     if profile is None or profile.sun_sign is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="persona not configured")
     target = date_ or _today()
 
-    sign_row = await _sign_fortune(session, target, profile.sun_sign)
+    owner = await get_owner_profile(session, user_id)
+    owner_sign = owner.sun_sign if owner is not None else None
+    sign_row = (
+        await _sign_fortune(session, target, owner_sign) if owner_sign is not None else None
+    )
     greeting_row = await _daily_content(session, device_id, target, "greeting")
-    bazi = await _bazi_profile(session, device_id)
+    bazi = await _bazi_profile(session, user_id)
     bazi_row = (
         await _daily_content(session, device_id, target, "bazi_fortune")
         if bazi is not None
@@ -255,7 +273,7 @@ async def get_daily_fortune(
     if greeting_row is None or (bazi is not None and bazi_row is None):
         generating = True
         _enqueue_device_content(session, device_id, target)
-    if sign_row is None:
+    if owner_sign is not None and sign_row is None:
         # L1 缺失：直接入队 L1（handler 幂等）；worker 侧 L2 任务会自行延迟重试
         generating = True
         session.add(
@@ -268,7 +286,7 @@ async def get_daily_fortune(
     await session.commit()
     return DailyFortuneOut(
         date=target,
-        sign=profile.sun_sign,
+        sign=owner_sign,
         sign_fortune=sign_fortune,
         greeting=greeting,
         bazi_fortune=bazi_fortune,

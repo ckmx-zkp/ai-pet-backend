@@ -27,6 +27,7 @@ from pet_common.models import (
     DeviceDailyContent,
     MBTIKBEntry,
     OwnerBaziProfile,
+    OwnerProfile,
     PersonaProfile,
     ZodiacKBEntry,
 )
@@ -59,6 +60,7 @@ class Store:
             capabilities={},
         )
         self.profile: PersonaProfile | None = None
+        self.owner: OwnerProfile | None = None
         self.bazi: OwnerBaziProfile | None = None
         self.sign_fortunes: dict[tuple[date, str], DailySignFortune] = {}
         self.contents: dict[tuple[int, date, str], DeviceDailyContent] = {}
@@ -75,6 +77,8 @@ class FakeSession:
     def add(self, obj: object) -> None:
         if isinstance(obj, OwnerBaziProfile):
             self.store.bazi = obj
+        elif isinstance(obj, OwnerProfile):
+            self.store.owner = obj
         elif isinstance(obj, DeviceDailyContent):
             self.store.contents[(obj.device_id, obj.content_date, obj.kind)] = obj
         elif isinstance(obj, AgentTask):
@@ -82,11 +86,23 @@ class FakeSession:
         elif isinstance(obj, AuditLog):
             self.store.audits.append(obj)
 
+    async def get(self, model: type[object], ident: object) -> object | None:
+        if model is OwnerBaziProfile:
+            bazi = self.store.bazi
+            return bazi if bazi is not None and bazi.user_id == ident else None
+        if model is OwnerProfile:
+            owner = self.store.owner
+            return owner if owner is not None and owner.user_id == ident else None
+        return None
+
     async def delete(self, obj: object) -> None:
         if isinstance(obj, DeviceDailyContent):
             self.store.contents.pop((obj.device_id, obj.content_date, obj.kind), None)
 
     async def commit(self) -> None:
+        pass
+
+    async def refresh(self, obj: object) -> None:
         pass
 
 
@@ -100,6 +116,10 @@ def make_profile() -> PersonaProfile:
         overrides={},
         dossier={},
     )
+
+
+def make_owner(*, sun_sign: str | None = "scorpio") -> OwnerProfile:
+    return OwnerProfile(user_id=1, sun_sign=sun_sign, mbti="INFP", quiz_results={})
 
 
 @pytest.fixture
@@ -119,8 +139,11 @@ def client(store: Store, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     async def fake_get_profile(s: AsyncSession, device_id: int) -> PersonaProfile | None:
         return store.profile
 
-    async def fake_bazi(s: AsyncSession, device_id: int) -> OwnerBaziProfile | None:
+    async def fake_bazi(s: AsyncSession, user_id: int) -> OwnerBaziProfile | None:
         return store.bazi
+
+    async def fake_user_devices(s: AsyncSession, user_id: int) -> list[int]:
+        return [store.device.id]
 
     async def fake_sign_fortune(
         s: AsyncSession, fortune_date: date, sign: str
@@ -137,6 +160,7 @@ def client(store: Store, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setattr(fortune_router, "_bazi_profile", fake_bazi)
     monkeypatch.setattr(fortune_router, "_sign_fortune", fake_sign_fortune)
     monkeypatch.setattr(fortune_router, "_daily_content", fake_daily_content)
+    monkeypatch.setattr(fortune_router, "claimed_device_ids_for_user", fake_user_devices)
 
     async def override_get_session() -> AsyncIterator[AsyncSession]:
         yield cast(AsyncSession, session)
@@ -182,7 +206,7 @@ def test_bazi_get_not_recorded_404(client: TestClient) -> None:
 
 def test_bazi_put_change_clears_chart_and_regenerates(client: TestClient, store: Store) -> None:
     store.bazi = OwnerBaziProfile(
-        device_id=1,
+        user_id=1,
         calendar_type="solar",
         birth_date=date(1995, 11, 8),
         birth_time=time(14, 30),
@@ -213,10 +237,39 @@ def test_daily_fortune_persona_not_configured_404(client: TestClient) -> None:
     assert resp.status_code == 404
 
 
+def test_daily_fortune_uses_owner_sign_not_pet(client: TestClient, store: Store) -> None:
+    store.profile = make_profile()  # 宠物天蝎
+    store.owner = make_owner(sun_sign="pisces")
+    store.sign_fortunes[(TODAY, "pisces")] = DailySignFortune(
+        fortune_date=TODAY, sign="pisces", payload=dict(FORTUNE_PAYLOAD), llm_model="m"
+    )
+    store.contents[(1, TODAY, "greeting")] = DeviceDailyContent(
+        device_id=1, content_date=TODAY, kind="greeting", payload={"text": "早上好呀"}
+    )
+    resp = client.get("/api/devices/1/fortune/daily", headers=auth_headers())
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["sign"] == "pisces"
+    assert body["sign_fortune"]["overall"] == FORTUNE_PAYLOAD["overall"]
+    assert body["generating"] is False
+
+
+def test_daily_fortune_without_owner_sign_skips_l1(client: TestClient, store: Store) -> None:
+    store.profile = make_profile()
+    resp = client.get("/api/devices/1/fortune/daily", headers=auth_headers())
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["sign"] is None
+    assert body["sign_fortune"] is None
+    assert "daily_sign_fortune" not in [task.kind for task in store.tasks]
+    assert "daily_device_content" in [task.kind for task in store.tasks]
+
+
 def test_daily_fortune_missing_content_generating_and_lazy_enqueue(
     client: TestClient, store: Store
 ) -> None:
     store.profile = make_profile()
+    store.owner = make_owner()
     resp = client.get("/api/devices/1/fortune/daily", headers=auth_headers())
     assert resp.status_code == 200
     body = resp.json()
@@ -234,6 +287,7 @@ def test_daily_fortune_missing_content_generating_and_lazy_enqueue(
 
 def test_daily_fortune_full_content(client: TestClient, store: Store) -> None:
     store.profile = make_profile()
+    store.owner = make_owner()
     store.sign_fortunes[(TODAY, "scorpio")] = DailySignFortune(
         fortune_date=TODAY, sign="scorpio", payload=dict(FORTUNE_PAYLOAD), llm_model="m"
     )
@@ -241,7 +295,7 @@ def test_daily_fortune_full_content(client: TestClient, store: Store) -> None:
         device_id=1, content_date=TODAY, kind="greeting", payload={"text": "早上好呀"}
     )
     store.bazi = OwnerBaziProfile(
-        device_id=1,
+        user_id=1,
         calendar_type="solar",
         birth_date=date(1995, 11, 8),
         birth_time=None,
@@ -316,14 +370,19 @@ async def test_compile_profile_appends_daily_guidance(monkeypatch: pytest.Monkey
 
     monkeypatch.setattr(persona_service, "get_zodiac_entry", fake_get_zodiac)
     monkeypatch.setattr(persona_service, "get_mbti_entry", fake_get_mbti)
+    async def fake_owner(session: AsyncSession, user_id: int) -> OwnerProfile:
+        return OwnerProfile(user_id=1, sun_sign="scorpio", mbti="INFP", quiz_results={})
+
     monkeypatch.setattr(persona_service, "get_daily_guidance", fake_daily_guidance)
     monkeypatch.setattr(persona_service, "compile_persona", fake_compile_persona)
+    monkeypatch.setattr(persona_service, "get_owner_profile", fake_owner)
 
     pack = await persona_service.compile_profile(cast(AsyncSession, object()), make_profile())
-    assert captured["args"] == (1, "scorpio")
+    assert captured["args"] == (1, "scorpio")  # 运势键是主人星座
     assert captured["daily_context"] == "\n".join(guidance)
     fragments = pack["system_prompt_fragments"]
     assert fragments[0].startswith("你的星座是天蝎座")
+    assert fragments[1].startswith("这些是主人的信息")
     assert fragments[-2:] == guidance  # 引导语追加在片段末尾，7 字段契约不变
 
 
@@ -458,10 +517,16 @@ def _mock_device_queries(
     async def fake_memories(session: AsyncSession, device_id: int) -> list[object]:
         return []
 
+    async def fake_owner(session: AsyncSession, user_id: int) -> OwnerProfile | None:
+        if profile is None:
+            return None
+        return make_owner()
+
     monkeypatch.setattr(worker_tasks, "_profile", fake_profile)
     monkeypatch.setattr(worker_tasks, "_sign_fortune", fake_sign)
     monkeypatch.setattr(worker_tasks, "_device_content", fake_content)
     monkeypatch.setattr(worker_tasks, "_bazi_profile", fake_bazi)
+    monkeypatch.setattr(worker_tasks, "_owner_profile", fake_owner)
     monkeypatch.setattr(worker_tasks, "_recent_summary", fake_summary)
     monkeypatch.setattr(worker_tasks, "_top_active_memories", fake_memories)
 
@@ -512,7 +577,7 @@ async def test_device_content_with_bazi_casts_chart_and_stores(
         fortune_date=TODAY, sign="scorpio", payload=dict(FORTUNE_PAYLOAD), llm_model="m"
     )
     bazi = OwnerBaziProfile(
-        device_id=1,
+        user_id=1,
         calendar_type="solar",
         birth_date=date(1995, 11, 8),
         birth_time=None,
@@ -890,11 +955,15 @@ def admin_client(store: Store, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     ) -> DeviceDailyContent | None:
         return store.contents.get((device_id, content_date, kind))
 
+    async def fake_owner(s: AsyncSession, user_id: int) -> OwnerProfile | None:
+        return store.owner
+
     monkeypatch.setattr(admin_router, "_get_device", fake_get_device)
     monkeypatch.setattr(admin_router, "get_profile", fake_get_profile)
     monkeypatch.setattr(admin_router, "_bazi_profile", fake_bazi)
     monkeypatch.setattr(admin_router, "_sign_fortune", fake_sign_fortune)
     monkeypatch.setattr(admin_router, "_daily_content", fake_daily_content)
+    monkeypatch.setattr(admin_router, "get_owner_profile", fake_owner)
 
     async def override_get_session() -> AsyncIterator[AsyncSession]:
         yield cast(AsyncSession, session)
@@ -908,6 +977,7 @@ def test_admin_daily_fortune_full_content_readonly(
     admin_client: TestClient, store: Store
 ) -> None:
     store.profile = make_profile()
+    store.owner = make_owner()
     store.sign_fortunes[(TODAY, "scorpio")] = DailySignFortune(
         fortune_date=TODAY, sign="scorpio", payload=dict(FORTUNE_PAYLOAD), llm_model="m"
     )

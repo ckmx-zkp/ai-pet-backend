@@ -6,7 +6,6 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from persona_compiler import question_public_view, score_mbti
 from pet_common.db import get_session
 from pet_common.models import PersonaProfile
 from web_api.deps import get_current_claims
@@ -17,6 +16,13 @@ from web_api.persona_service import (
     get_zodiac_entry,
 )
 from web_api.routers.devices import _current_user_id, _get_own_device
+from web_api.routers.owner import (
+    QuestionnaireIn,
+    QuestionnaireOut,
+    apply_questionnaire,
+    get_owner_questionnaire,
+    to_owner_out,
+)
 
 router = APIRouter(prefix="/devices/{device_id}/persona", tags=["persona"])
 
@@ -124,62 +130,25 @@ async def put_persona(
     return _to_response(profile)
 
 
-class QuestionnaireOut(BaseModel):
-    answers_required: int
-    questions: list[dict[str, str]]
-
-
-class QuestionnaireIn(BaseModel):
-    answers: list[str] = Field(min_length=1, max_length=40)
-    sun_sign: str | None = None
-    overrides: dict[str, Any] = Field(default_factory=dict)
-    follow_latest: bool = True
-    dossier: PersonaDossier = Field(default_factory=PersonaDossier)
-
-    @field_validator("sun_sign", mode="before")
-    @classmethod
-    def normalize_optional_sign(cls, value: Any) -> str | None:
-        if value is None or str(value).strip() == "":
-            return None
-        return str(value).strip().lower()
-
-
 @router.get("/questionnaire", response_model=QuestionnaireOut)
 async def get_questionnaire(
     device_id: int, claims: ClaimsDep, session: SessionDep
 ) -> QuestionnaireOut:
-    """返回题面；客户端只展示，不算型。"""
+    """主人问卷题面（设备路径别名）；不算型、不改宠物人设。"""
     await _get_own_device(session, device_id, _current_user_id(claims))
-    questions = question_public_view()
-    return QuestionnaireOut(answers_required=len(questions), questions=questions)
+    return await get_owner_questionnaire()
 
 
-@router.post("/questionnaire", response_model=PersonaResponse)
+@router.post("/questionnaire")
 async def submit_questionnaire(
     device_id: int, body: QuestionnaireIn, claims: ClaimsDep, session: SessionDep
-) -> PersonaResponse:
-    """提交问卷：backend 计分后写入人设。"""
+) -> dict[str, Any]:
+    """提交主人问卷：计分写入 owner_profiles，不改宠物 persona。"""
     user_id = _current_user_id(claims)
     await _get_own_device(session, device_id, user_id)
-    try:
-        mbti_key = score_mbti(body.answers)
-    except ValueError as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
-    profile = await get_profile(session, device_id)
-    sun_sign = body.sun_sign or (profile.sun_sign if profile is not None else None)
-    if sun_sign is None:
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="sun_sign is required when persona is not configured",
-        )
-    request = PersonaPutRequest(
-        sun_sign=sun_sign,
-        mbti=mbti_key,
-        overrides=body.overrides,
-        follow_latest=body.follow_latest,
-        dossier=body.dossier,
-    )
-    return await put_persona(device_id, request, claims, session)
+    owner = await apply_questionnaire(session, user_id, body)
+    await session.commit()
+    return to_owner_out(owner).model_dump(mode="json")
 
 
 @router.post("/preview")
