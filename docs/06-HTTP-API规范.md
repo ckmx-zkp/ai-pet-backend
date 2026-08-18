@@ -147,6 +147,24 @@ KB 条目遵循不可变发布：`POST /admin/kb/zodiac`、`POST /admin/kb/mbti`
 `generating: true` 且对应字段为 null，客户端显示"生成中"空态稍后重查。`sign_fortune` 为全站
 共享内容，`greeting`/`bazi_fortune` 为该设备个性化生成（均异步产出，见 docs/12）。
 
+## 主动播报（E11，设计见 docs/13）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET/PUT | `/devices/{id}/broadcast/prefs` | 播报配置：`enabled`（默认 false）、`kinds`（`care`/`fortune` 子集）、`send_window`（如 `08:00-21:00`，东八区） |
+| POST | `/admin/devices/{id}/broadcast/test` | admin 下发测试播报：body 可带自定义 `text`（缺省内置测试句），写 `kind=test, priority=0` 消息，返回 `{id, status}`；状态经 admin 设备详情/专用查询查看 |
+
+### `GET /api/internal/devices/{device_uid}/broadcasts/pending`（小智轮询）
+
+返回该设备 `pending` 消息（按 priority、created_at 升序，`limit` 上限 5）：
+`[{"id": 1, "kind": "care", "text": "...", "priority": 1}]`。设备离线时小智不拉取；消息由 backend
+自产，不落对话历史、不经脱敏。
+
+### `POST /api/internal/devices/{device_uid}/broadcasts/{id}/ack`
+
+回执 `{"status": "delivered|played|failed"}`；`played` 写 `played_at`。仅允许 pending/delivered
+状态的消息回执，其他状态 409。
+
 ## 内部接口（xiaozhi-server）
 
 | 方法 | 路径 | 说明 |
@@ -157,6 +175,8 @@ KB 条目遵循不可变发布：`POST /admin/kb/zodiac`、`POST /admin/kb/mbti`
 | POST | `/api/internal/chat/sessions/{id}/end` | 触发摘要入队（幂等） |
 | POST | `/api/internal/devices/seen` | 设备首见登记/活跃上报；首次见到 MAC 时分配 app `binding_id` |
 | GET | `/api/internal/context/device` | 小智 Context Provider；读取 `device-id` 请求头，返回动态短上下文 `{"code":0,"data":[]}`，未知/未认领设备也空成功降级 |
+| GET | `/api/internal/devices/{device_uid}/broadcasts/pending` | 小智轮询拉取待播报消息（E11/docs/13） |
+| POST | `/api/internal/devices/{device_uid}/broadcasts/{id}/ack` | 播报回执 delivered/played/failed（E11/docs/13） |
 
 ### `GET /api/internal/context/device`（小智 C5）
 
