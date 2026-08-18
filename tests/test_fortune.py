@@ -649,6 +649,8 @@ async def test_chat_json_web_search_parses_text_when_search_executed(
     assert result == {"source_digest": "d", "signs": {}}
     assert requests[0]["model"] == "MiniMax-M3"  # M2.5 不支持服务端检索，固定走搜索模型
     assert requests[0]["tools"] == [{"type": "web_search_20250305", "name": "web_search"}]
+    # tool_choice 显式强制 web_search：不强制时模型可能直接作答（线上回归实测）
+    assert requests[0]["tool_choice"] == {"type": "tool", "name": "web_search"}
 
 
 async def test_chat_json_web_search_without_search_blocks_raises(

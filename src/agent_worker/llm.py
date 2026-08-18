@@ -123,7 +123,9 @@ async def _chat_json_web_search(
 
     服务端工具仅该端点支持；实测 MiniMax-M2.5 会把 web_search 降级为客户端
     tool_use（不执行检索），故固定使用 settings.fortune_search_model（默认 M3）。
-    响应未出现 server_tool_use/web_search_tool_result 块视为检索未执行，抛
+    实测 M3 是否检索具有不确定性，故用 tool_choice 显式强制 web_search
+    （MiniMax Anthropic 兼容端点完全支持 tool_choice，见官方文档）；响应未出现
+    server_tool_use/web_search_tool_result 块仍视为检索未执行，抛
     LLMUnavailableError 走延迟重试——不静默降级为纯生成。
     """
     if not settings.llm_base_url or not settings.llm_api_key:
@@ -137,6 +139,8 @@ async def _chat_json_web_search(
         "system": system,
         "messages": [{"role": "user", "content": user_content}],
         "tools": [{"type": "web_search_20250305", "name": "web_search"}],
+        # 强制服务端检索：不强制时模型可能直接作答（2026-08-18 线上回归实测）
+        "tool_choice": {"type": "tool", "name": "web_search"},
     }
     headers = {
         "x-api-key": settings.llm_api_key,
@@ -183,8 +187,8 @@ async def generate_sign_fortunes(settings: Settings, fortune_date: date) -> dict
     sign_list = ", ".join(SIGN_KEYS)
     if settings.fortune_search_enabled:
         system = f"""你是星座运势内容生成器，为 AI 陪伴产品生成当日 12 星座运势。
-先用 web_search 一次性整合检索当日星座运势与玄学/命理（黄历宜忌、吉时、五行等）
-公开信息，再由你决定如何分发到各星座。
+必须先调用 web_search 工具检索当日星座运势与玄学/命理（黄历宜忌、吉时、五行等）
+公开信息，再基于检索结果生成；禁止未检索直接作答。检索后由你决定如何分发到各星座。
 只返回一个 JSON 对象，禁止 Markdown。JSON 结构：
 {{
   "source_digest": "检索到的当日信息一句话摘要（便于运营排查，不含链接正文）",
@@ -197,7 +201,11 @@ async def generate_sign_fortunes(settings: Settings, fortune_date: date) -> dict
 }}
 signs 必须恰好包含这 12 个键：{sign_list}。每个维度一句话，语气温和积极，
 不做医疗/投资建议，不做宿命论断。"""
-        user = json.dumps({"date": fortune_date.isoformat()}, ensure_ascii=False)
+        user = (
+            f"今天是 {fortune_date.isoformat()}。请先用 web_search 检索 "
+            f"{fortune_date.isoformat()} 当日的星座运势与黄历宜忌/吉时/五行信息，"
+            "再按要求输出 JSON。"
+        )
         return await _chat_json_web_search(settings, system, user)
 
     sign_list_note = (
