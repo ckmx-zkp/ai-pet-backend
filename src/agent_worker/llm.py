@@ -116,20 +116,94 @@ async def generate_structured_analysis(
     )
 
 
-async def generate_sign_fortunes(settings: Settings, fortune_date: date) -> dict[str, Any]:
-    """一次生成 12 星座当日四维度运势（E10 L1 层）。
+async def _chat_json_web_search(
+    settings: Settings, system: str, user_content: str
+) -> dict[str, Any]:
+    """MiniMax Anthropic Messages API + 服务端 web_search（docs/12 §4 整合搜索）。
 
-    联网搜索源未接入（docs/12 §8 待决）：fortune_search_enabled=false 时纯 LLM
-    按星象常识生成，source_digest 由 prompt 与调用方双重保证标注"非实时检索"。
+    服务端工具仅该端点支持；实测 MiniMax-M2.5 会把 web_search 降级为客户端
+    tool_use（不执行检索），故固定使用 settings.fortune_search_model（默认 M3）。
+    响应未出现 server_tool_use/web_search_tool_result 块视为检索未执行，抛
+    LLMUnavailableError 走延迟重试——不静默降级为纯生成。
     """
-    if settings.fortune_search_enabled:
-        source_note = "可联网检索当日星象/运势公开信息作为依据，source_digest 概述检索到的信息。"
-    else:
-        source_note = (
-            "当前无联网检索能力，按星象常识生成；source_digest 必须注明“非实时检索”。"
-        )
+    if not settings.llm_base_url or not settings.llm_api_key:
+        raise LLMUnavailableError("LLM_BASE_URL and LLM_API_KEY must be configured")
+    base = settings.llm_base_url.rstrip("/")
+    # OpenAI 兼容端点（.../v1）与 Anthropic 端点（.../anthropic）同源派生
+    anthropic_base = f"{base[:-3]}/anthropic" if base.endswith("/v1") else f"{base}/anthropic"
+    body = {
+        "model": settings.fortune_search_model or settings.llm_model,
+        "max_tokens": 8000,
+        "system": system,
+        "messages": [{"role": "user", "content": user_content}],
+        "tools": [{"type": "web_search_20250305", "name": "web_search"}],
+    }
+    headers = {
+        "x-api-key": settings.llm_api_key,
+        "anthropic-version": "2023-06-01",
+        "Content-Type": "application/json",
+    }
+    # 服务端检索在单次请求内完成，耗时显著长于普通生成，超时下限放宽到 60s
+    timeout = max(settings.llm_timeout_seconds, 60.0)
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.post(
+                f"{anthropic_base}/v1/messages", headers=headers, json=body
+            )
+    except httpx.RequestError as exc:
+        raise LLMUnavailableError(f"LLM request unavailable: {type(exc).__name__}") from exc
+    if _is_retryable_status(response.status_code):
+        raise LLMUnavailableError(f"LLM API temporarily unavailable: HTTP {response.status_code}")
+    response.raise_for_status()
+    data: dict[str, Any] = response.json()
+    blocks = data.get("content")
+    if not isinstance(blocks, list):
+        raise ValueError("LLM response has no content blocks")
+    block_types = {block.get("type") for block in blocks if isinstance(block, dict)}
+    if not {"server_tool_use", "web_search_tool_result"} & block_types:
+        raise LLMUnavailableError("web search was not executed by the provider")
+    text = "".join(
+        str(block.get("text"))
+        for block in blocks
+        if isinstance(block, dict) and block.get("type") == "text" and block.get("text")
+    )
+    if not text.strip():
+        raise ValueError("LLM response has no text content")
+    return _extract_json(text)
+
+
+async def generate_sign_fortunes(settings: Settings, fortune_date: date) -> dict[str, Any]:
+    """一次性整合搜索生成 12 星座当日四维度运势 + 共享玄学段（E10 L1 层）。
+
+    fortune_search_enabled=true 时走 MiniMax 服务端 web_search 一次性整合检索
+    （当日星座运势 + 黄历宜忌/吉时/五行等玄学公开信息），由 LLM 决定分发；
+    关闭时纯 LLM 按星象常识生成，source_digest 由 prompt 与调用方双重保证标注
+    "非实时检索"（docs/12 §4）。
+    """
     sign_list = ", ".join(SIGN_KEYS)
-    system = f"""你是星座运势内容生成器，为 AI 陪伴产品生成当日 12 星座运势。{source_note}
+    if settings.fortune_search_enabled:
+        system = f"""你是星座运势内容生成器，为 AI 陪伴产品生成当日 12 星座运势。
+先用 web_search 一次性整合检索当日星座运势与玄学/命理（黄历宜忌、吉时、五行等）
+公开信息，再由你决定如何分发到各星座。
+只返回一个 JSON 对象，禁止 Markdown。JSON 结构：
+{{
+  "source_digest": "检索到的当日信息一句话摘要（便于运营排查，不含链接正文）",
+  "metaphysics": "当日玄学/命理共享摘要（黄历宜忌、吉时、五行等，1~2 句）",
+  "signs": {{
+    "aries": {{"overall": "一句总述", "career": "事业", "wealth": "财运",
+      "study": "学业", "love": "情感"}},
+    ...其余 11 星座同构...
+  }}
+}}
+signs 必须恰好包含这 12 个键：{sign_list}。每个维度一句话，语气温和积极，
+不做医疗/投资建议，不做宿命论断。"""
+        user = json.dumps({"date": fortune_date.isoformat()}, ensure_ascii=False)
+        return await _chat_json_web_search(settings, system, user)
+
+    sign_list_note = (
+        "当前无联网检索能力，按星象常识生成；source_digest 必须注明“非实时检索”。"
+    )
+    system = f"""你是星座运势内容生成器，为 AI 陪伴产品生成当日 12 星座运势。{sign_list_note}
 只返回一个 JSON 对象，禁止 Markdown。JSON 结构：
 {{
   "source_digest": "当日信息一句话摘要（便于运营排查，不含链接正文）",

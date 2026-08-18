@@ -15,6 +15,7 @@ from agent_worker.llm import (
     generate_structured_analysis,
 )
 from pet_common.config import get_settings
+from pet_common.dates import today_cn
 from pet_common.models import (
     AgentTask,
     AnalysisResult,
@@ -184,10 +185,10 @@ async def daily_summary_handler(payload: dict[str, Any], session: AsyncSession) 
 
 
 def _task_date(payload: dict[str, Any]) -> date:
-    """任务 payload 的 date 为 ISO 字符串；缺省为今天（UTC）。"""
+    """任务 payload 的 date 为 ISO 字符串；缺省为今天（东八区，docs/12 §4）。"""
     raw = payload.get("date")
     if raw is None:
-        return datetime.now(UTC).date()
+        return today_cn()
     if not isinstance(raw, str):
         raise ValueError("task payload 'date' must be an ISO date string")
     return date.fromisoformat(raw)
@@ -275,9 +276,15 @@ async def daily_sign_fortune_handler(payload: dict[str, Any], session: AsyncSess
     settings = get_settings()
     result = await generate_sign_fortunes(settings, fortune_date)
     digest = str(result.get("source_digest", "")).strip()[:500]
-    # 搜索源未接入（docs/12 §8 待决）：关闭时强制标注"非实时检索"，不全信 prompt。
-    if not settings.fortune_search_enabled and "非实时检索" not in digest:
+    # digest 必须区分检索来源（docs/12 §4）：联网检索成功标注"已联网检索"，
+    # 搜索关闭时强制标注"非实时检索"，不全信 prompt。
+    if settings.fortune_search_enabled:
+        if "已联网检索" not in digest:
+            digest = f"{digest}（已联网检索）" if digest else "已联网检索"
+    elif "非实时检索" not in digest:
         digest = f"{digest}（非实时检索）" if digest else "非实时检索"
+    # 共享玄学/命理摘要：payload 扩展键，逐行写入（docs/12 §4）
+    metaphysics = str(result.get("metaphysics", "")).strip()[:500]
     signs = result.get("signs")
     if not isinstance(signs, dict):
         raise ValueError("LLM sign fortunes response missing 'signs' object")
@@ -289,6 +296,8 @@ async def daily_sign_fortune_handler(payload: dict[str, Any], session: AsyncSess
         if fortune is None:
             continue
         fortune["source_digest"] = digest
+        if metaphysics:
+            fortune["metaphysics"] = metaphysics
         session.add(
             DailySignFortune(
                 fortune_date=fortune_date,
@@ -388,6 +397,66 @@ async def daily_device_content_handler(payload: dict[str, Any], session: AsyncSe
                         payload=fortune,
                     )
                 )
+
+
+async def _claimed_device_ids(session: AsyncSession) -> list[int]:
+    """已认领且已配置人设（有星座）的设备 id；强制 limit，不全表扫（红线 5/8）。"""
+    result = await session.execute(
+        select(Device.id)
+        .join(PersonaProfile, PersonaProfile.device_id == Device.id)
+        .where(Device.user_id.is_not(None), PersonaProfile.sun_sign.is_not(None))
+        .order_by(Device.id)
+        .limit(500)
+    )
+    return list(result.scalars().all())
+
+
+async def _devices_with_content(
+    session: AsyncSession, device_ids: list[int], content_date: date, kind: str
+) -> set[int]:
+    if not device_ids:
+        return set()
+    result = await session.execute(
+        select(DeviceDailyContent.device_id).where(
+            DeviceDailyContent.device_id.in_(device_ids),
+            DeviceDailyContent.content_date == content_date,
+            DeviceDailyContent.kind == kind,
+        )
+    )
+    return set(result.scalars().all())
+
+
+async def prefill_daily_content(session: AsyncSession, content_date: date) -> dict[str, int]:
+    """每日定时预生成（docs/12 §4）：为已认领设备补齐当日 L1/L2 内容。
+
+    沿用懒触发去重思路：先查目标表再入队，同一 (date, kind) 幂等跳过；
+    返回各 kind 入队计数供日志记录。由 worker 周期调度调用（东八区 05:00 后）。
+    """
+    enqueued = {"daily_sign_fortune": 0, "daily_device_content": 0}
+    existing = await _existing_fortune_signs(session, content_date)
+    if any(sign not in existing for sign in SIGN_KEYS):
+        session.add(
+            AgentTask(
+                kind="daily_sign_fortune",
+                payload={"date": content_date.isoformat()},
+                status="pending",
+            )
+        )
+        enqueued["daily_sign_fortune"] += 1
+    device_ids = await _claimed_device_ids(session)
+    have_greeting = await _devices_with_content(session, device_ids, content_date, "greeting")
+    for device_id in device_ids:
+        if device_id in have_greeting:
+            continue  # 幂等：当日 greeting 已存在
+        session.add(
+            AgentTask(
+                kind="daily_device_content",
+                payload={"device_id": device_id, "date": content_date.isoformat()},
+                status="pending",
+            )
+        )
+        enqueued["daily_device_content"] += 1
+    return enqueued
 
 
 TASK_REGISTRY: dict[str, TaskHandler] = {

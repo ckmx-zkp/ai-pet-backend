@@ -1,6 +1,6 @@
 """管理端设备资产及跨用户只读/人设授权接口。"""
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Annotated, Any
 from uuid import uuid4
 
@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy import String, cast, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from pet_common.dates import today_cn
 from pet_common.db import get_session
 from pet_common.models import (
     AnalysisResult,
@@ -19,6 +20,13 @@ from pet_common.models import (
     PersonaProfile,
 )
 from web_api.persona_service import get_mbti_entry, get_profile, get_zodiac_entry
+from web_api.routers.fortune import (
+    DailyFortuneOut,
+    _bazi_profile,
+    _daily_content,
+    _dimensions,
+    _sign_fortune,
+)
 from web_api.routers.messages import MessageResponse, _list_messages
 from web_api.routers.persona import PersonaPutRequest, PersonaResponse, _to_response
 
@@ -316,6 +324,46 @@ async def get_admin_peripheral(device_id: int, session: SessionDep) -> Periphera
         eye_closed=state.eye_closed,
         extra=state.extra,
         updated_at=state.updated_at,
+    )
+
+
+@router.get("/{device_id}/fortune/daily", response_model=DailyFortuneOut)
+async def get_admin_daily_fortune(
+    device_id: int,
+    session: SessionDep,
+    date_: Annotated[date | None, Query(alias="date")] = None,
+) -> DailyFortuneOut:
+    """运营核对用当日运势聚合（docs/12 §5）：只读，与用户版同结构，不触发懒入队。"""
+    await _get_device(session, device_id)
+    profile = await get_profile(session, device_id)
+    if profile is None or profile.sun_sign is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="persona not configured")
+    target = date_ or today_cn()
+
+    sign_row = await _sign_fortune(session, target, profile.sun_sign)
+    greeting_row = await _daily_content(session, device_id, target, "greeting")
+    bazi = await _bazi_profile(session, device_id)
+    bazi_row = (
+        await _daily_content(session, device_id, target, "bazi_fortune")
+        if bazi is not None
+        else None
+    )
+
+    greeting: str | None = None
+    if greeting_row is not None:
+        text = greeting_row.payload.get("text")
+        if isinstance(text, str) and text.strip():
+            greeting = text
+    generating = (
+        sign_row is None or greeting_row is None or (bazi is not None and bazi_row is None)
+    )
+    return DailyFortuneOut(
+        date=target,
+        sign=profile.sun_sign,
+        sign_fortune=_dimensions(sign_row.payload) if sign_row is not None else None,
+        greeting=greeting,
+        bazi_fortune=_dimensions(bazi_row.payload) if bazi_row is not None else None,
+        generating=generating,
     )
 
 

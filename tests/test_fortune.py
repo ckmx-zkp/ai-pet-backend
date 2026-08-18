@@ -7,7 +7,7 @@ daily_device_content 的 L1 缺失延迟重试 / 无八字不产 bazi_fortune / 
 """
 
 from collections.abc import AsyncIterator
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any, cast
 
 import pytest
@@ -16,6 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import agent_worker.tasks as worker_tasks
 from agent_worker.llm import SIGN_KEYS
+from pet_common.config import Settings
+from pet_common.dates import today_cn
 from pet_common.db import get_session
 from pet_common.models import (
     AgentTask,
@@ -30,9 +32,10 @@ from pet_common.models import (
 )
 from test_devices import auth_headers
 from web_api.main import create_app
+from web_api.routers import admin_devices as admin_router
 from web_api.routers import fortune as fortune_router
 
-TODAY = datetime.now(UTC).date()
+TODAY = today_cn()
 
 FORTUNE_PAYLOAD = {
     "overall": "整体平顺的一天",
@@ -362,11 +365,21 @@ def _mock_sign_fortunes(
     monkeypatch.setattr(worker_tasks, "generate_sign_fortunes", fake_generate)
 
 
+def _pin_settings(monkeypatch: pytest.MonkeyPatch, *, search_enabled: bool) -> None:
+    """固定 worker 侧 Settings，避免默认开关随部署配置漂移影响断言。"""
+    monkeypatch.setattr(
+        worker_tasks,
+        "get_settings",
+        lambda: Settings(fortune_search_enabled=search_enabled),
+    )
+
+
 async def test_sign_fortune_handler_writes_missing_signs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     store = WorkerStore()
     calls: list[date] = []
+    _pin_settings(monkeypatch, search_enabled=False)
 
     async def fake_existing(session: AsyncSession, fortune_date: date) -> set[str]:
         return {"aries"}  # aries 已存在：幂等跳过
@@ -541,3 +554,346 @@ async def test_device_content_with_bazi_casts_chart_and_stores(
         row.kind for row in store.added if isinstance(row, DeviceDailyContent)
     )
     assert kinds == ["bazi_fortune", "greeting"]
+
+
+# ---------- worker：整合搜索（fortune_search_enabled=true） ----------
+
+
+async def test_sign_fortune_handler_search_enabled_marks_digest_and_metaphysics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = WorkerStore()
+    _pin_settings(monkeypatch, search_enabled=True)
+
+    async def fake_existing(session: AsyncSession, fortune_date: date) -> set[str]:
+        return set()
+
+    async def fake_generate(settings: object, fortune_date: date) -> dict[str, Any]:
+        return {
+            "source_digest": "黄历宜祭祀，星象平稳",
+            "metaphysics": "今日宜祈福，吉时在午后",
+            "signs": {
+                sign: {
+                    "overall": f"{sign} 总述",
+                    "career": "事业",
+                    "wealth": "财运",
+                    "study": "学业",
+                    "love": "情感",
+                }
+                for sign in SIGN_KEYS
+            },
+        }
+
+    monkeypatch.setattr(worker_tasks, "_existing_fortune_signs", fake_existing)
+    monkeypatch.setattr(worker_tasks, "generate_sign_fortunes", fake_generate)
+
+    await worker_tasks.daily_sign_fortune_handler(
+        {"date": TODAY.isoformat()}, cast(AsyncSession, FakeWorkerSession(store))
+    )
+    rows = [obj for obj in store.added if isinstance(obj, DailySignFortune)]
+    assert len(rows) == 12
+    for row in rows:
+        assert "已联网检索" in row.payload["source_digest"]  # 区分检索来源（docs/12 §4）
+        assert row.payload["metaphysics"] == "今日宜祈福，吉时在午后"  # payload 扩展键
+
+
+# ---------- llm：MiniMax 服务端 web_search（Anthropic Messages API） ----------
+
+
+def _mock_search_http(
+    monkeypatch: pytest.MonkeyPatch, payload: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """以 MockTransport 替代外发请求，返回捕获的请求体列表。"""
+    import httpx
+
+    requests: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json
+
+        requests.append(json.loads(request.content))
+        return httpx.Response(200, json=payload)
+
+    transport = httpx.MockTransport(handler)
+    real_client = httpx.AsyncClient  # patch 前捕获，避免 lambda 内自引用递归
+    # llm 模块在调用时经 httpx.AsyncClient 查找，patch 模块属性即可生效
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: real_client(transport=transport))
+    return requests
+
+
+def _search_settings() -> Settings:
+    return Settings(
+        llm_base_url="https://api.minimaxi.com/v1",
+        llm_api_key="test-key",
+        llm_model="MiniMax-M2.5",
+    )
+
+
+async def test_chat_json_web_search_parses_text_when_search_executed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import agent_worker.llm as worker_llm
+
+    requests = _mock_search_http(
+        monkeypatch,
+        {
+            "content": [
+                {"type": "thinking", "thinking": "（推理不外泄）"},
+                {"type": "server_tool_use", "name": "web_search", "input": {"query": "x"}},
+                {"type": "web_search_tool_result", "content": []},
+                {"type": "text", "text": '{"source_digest": "d", "signs": {}}'},
+            ]
+        },
+    )
+    result = await worker_llm._chat_json_web_search(_search_settings(), "sys", "user")
+    assert result == {"source_digest": "d", "signs": {}}
+    assert requests[0]["model"] == "MiniMax-M3"  # M2.5 不支持服务端检索，固定走搜索模型
+    assert requests[0]["tools"] == [{"type": "web_search_20250305", "name": "web_search"}]
+
+
+async def test_chat_json_web_search_without_search_blocks_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import agent_worker.llm as worker_llm
+
+    _mock_search_http(
+        monkeypatch,
+        {"content": [{"type": "tool_use", "name": "plugin_web_search", "input": {}}]},
+    )
+    # 模型降级为客户端 tool_use（未真正检索）：抛错走延迟重试，不静默降级
+    with pytest.raises(worker_llm.LLMUnavailableError):
+        await worker_llm._chat_json_web_search(_search_settings(), "sys", "user")
+
+
+async def test_generate_sign_fortunes_routes_by_search_switch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import agent_worker.llm as worker_llm
+
+    called: list[str] = []
+
+    async def fake_search(settings: Settings, system: str, user: str) -> dict[str, Any]:
+        called.append("search")
+        return {"signs": {}}
+
+    async def fake_chat(settings: Settings, system: str, user: str) -> dict[str, Any]:
+        called.append("chat")
+        return {"signs": {}}
+
+    monkeypatch.setattr(worker_llm, "_chat_json_web_search", fake_search)
+    monkeypatch.setattr(worker_llm, "_chat_json", fake_chat)
+
+    await worker_llm.generate_sign_fortunes(Settings(fortune_search_enabled=True), TODAY)
+    await worker_llm.generate_sign_fortunes(Settings(fortune_search_enabled=False), TODAY)
+    assert called == ["search", "chat"]
+
+
+# ---------- worker：每日定时预生成（docs/12 §4） ----------
+
+
+async def test_prefill_enqueues_missing_l1_and_l2(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = WorkerStore()
+
+    async def fake_existing(session: AsyncSession, fortune_date: date) -> set[str]:
+        return {"aries"}  # L1 未齐：需入队整合生成
+
+    async def fake_claimed(session: AsyncSession) -> list[int]:
+        return [1, 2, 3]
+
+    async def fake_have(
+        session: AsyncSession, device_ids: list[int], content_date: date, kind: str
+    ) -> set[int]:
+        return {2}  # 设备 2 当日 greeting 已存在：幂等跳过
+
+    monkeypatch.setattr(worker_tasks, "_existing_fortune_signs", fake_existing)
+    monkeypatch.setattr(worker_tasks, "_claimed_device_ids", fake_claimed)
+    monkeypatch.setattr(worker_tasks, "_devices_with_content", fake_have)
+
+    stats = await worker_tasks.prefill_daily_content(
+        cast(AsyncSession, FakeWorkerSession(store)), TODAY
+    )
+    assert stats == {"daily_sign_fortune": 1, "daily_device_content": 2}
+    tasks = [obj for obj in store.added if isinstance(obj, AgentTask)]
+    assert tasks[0].kind == "daily_sign_fortune"
+    assert tasks[0].payload == {"date": TODAY.isoformat()}
+    l2 = [task for task in tasks if task.kind == "daily_device_content"]
+    assert {task.payload["device_id"] for task in l2} == {1, 3}
+    assert all(task.payload["date"] == TODAY.isoformat() for task in l2)
+
+
+async def test_prefill_idempotent_when_content_complete(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = WorkerStore()
+
+    async def fake_existing(session: AsyncSession, fortune_date: date) -> set[str]:
+        return set(SIGN_KEYS)
+
+    async def fake_claimed(session: AsyncSession) -> list[int]:
+        return [1, 2]
+
+    async def fake_have(
+        session: AsyncSession, device_ids: list[int], content_date: date, kind: str
+    ) -> set[int]:
+        return {1, 2}
+
+    monkeypatch.setattr(worker_tasks, "_existing_fortune_signs", fake_existing)
+    monkeypatch.setattr(worker_tasks, "_claimed_device_ids", fake_claimed)
+    monkeypatch.setattr(worker_tasks, "_devices_with_content", fake_have)
+
+    stats = await worker_tasks.prefill_daily_content(
+        cast(AsyncSession, FakeWorkerSession(store)), TODAY
+    )
+    assert stats == {"daily_sign_fortune": 0, "daily_device_content": 0}
+    assert store.added == []  # 内容齐全：不入队
+
+
+def test_prefill_due_gates_on_cn_5am() -> None:
+    from agent_worker import worker as worker_module
+
+    before = datetime(2026, 8, 18, 20, 30, tzinfo=UTC)  # 东八区次日 04:30：未到 05:00
+    after = datetime(2026, 8, 18, 21, 30, tzinfo=UTC)  # 东八区次日 05:30
+    assert not worker_module.prefill_due(before, None)
+    assert worker_module.prefill_due(after, None)
+
+
+def test_prefill_due_interval_gating() -> None:
+    from agent_worker import worker as worker_module
+
+    now = datetime(2026, 8, 18, 22, 0, tzinfo=UTC)  # 东八区次日 06:00
+    assert not worker_module.prefill_due(now, now - timedelta(minutes=5))
+    assert worker_module.prefill_due(now, now - timedelta(minutes=16))
+
+
+# ---------- get_daily_guidance：昨日回退（docs/12 §6） ----------
+
+
+class ScalarQueueSession:
+    """按调用顺序返回 scalar 结果（get_daily_guidance 的查询次序固定）。"""
+
+    def __init__(self, results: list[object]) -> None:
+        self._results = list(results)
+
+    async def scalar(self, statement: object) -> object:
+        return self._results.pop(0)
+
+
+async def test_daily_guidance_today_content_no_fallback() -> None:
+    from web_api import persona_service
+
+    session = ScalarQueueSession([{"text": "今天的素材"}, {"overall": "今日顺"}])
+    fragments = await persona_service.get_daily_guidance(
+        cast(AsyncSession, session), 1, "scorpio"
+    )
+    assert fragments == [
+        "今天开场时可以自然地提到：今天的素材",
+        "今天聊天时可以自然地提到今日运势：今日顺",
+    ]
+
+
+async def test_daily_guidance_falls_back_to_recent_content() -> None:
+    from web_api import persona_service
+
+    session = ScalarQueueSession(
+        [
+            None,  # 当日 greeting 缺失
+            {"text": "昨天聊到一半的星星话题"},  # 最近一期 greeting 回退
+            None,  # 当日运势缺失
+            {"overall": "昨日整体平顺"},  # 最近一期运势回退
+        ]
+    )
+    fragments = await persona_service.get_daily_guidance(
+        cast(AsyncSession, session), 1, "scorpio"
+    )
+    # 回退内容标注"今日早些时候"语义
+    assert fragments == [
+        "今天开场时可以延续今日早些时候的素材：昨天聊到一半的星星话题",
+        "今天聊天时可以延续今日早些时候提到的运势：昨日整体平顺",
+    ]
+
+
+async def test_daily_guidance_empty_when_no_content_at_all() -> None:
+    from web_api import persona_service
+
+    session = ScalarQueueSession([None, None, None, None])
+    fragments = await persona_service.get_daily_guidance(
+        cast(AsyncSession, session), 1, "scorpio"
+    )
+    assert fragments == []  # 全无内容才返回空
+
+
+# ---------- admin：GET /admin/devices/{id}/fortune/daily（只读） ----------
+
+
+@pytest.fixture
+def admin_client(store: Store, monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    session = FakeSession(store)
+
+    async def fake_get_device(s: AsyncSession, device_id: int) -> Device:
+        return store.device
+
+    async def fake_get_profile(s: AsyncSession, device_id: int) -> PersonaProfile | None:
+        return store.profile
+
+    async def fake_bazi(s: AsyncSession, device_id: int) -> OwnerBaziProfile | None:
+        return store.bazi
+
+    async def fake_sign_fortune(
+        s: AsyncSession, fortune_date: date, sign: str
+    ) -> DailySignFortune | None:
+        return store.sign_fortunes.get((fortune_date, sign))
+
+    async def fake_daily_content(
+        s: AsyncSession, device_id: int, content_date: date, kind: str
+    ) -> DeviceDailyContent | None:
+        return store.contents.get((device_id, content_date, kind))
+
+    monkeypatch.setattr(admin_router, "_get_device", fake_get_device)
+    monkeypatch.setattr(admin_router, "get_profile", fake_get_profile)
+    monkeypatch.setattr(admin_router, "_bazi_profile", fake_bazi)
+    monkeypatch.setattr(admin_router, "_sign_fortune", fake_sign_fortune)
+    monkeypatch.setattr(admin_router, "_daily_content", fake_daily_content)
+
+    async def override_get_session() -> AsyncIterator[AsyncSession]:
+        yield cast(AsyncSession, session)
+
+    app = create_app()
+    app.dependency_overrides[get_session] = override_get_session
+    return TestClient(app)
+
+
+def test_admin_daily_fortune_full_content_readonly(
+    admin_client: TestClient, store: Store
+) -> None:
+    store.profile = make_profile()
+    store.sign_fortunes[(TODAY, "scorpio")] = DailySignFortune(
+        fortune_date=TODAY, sign="scorpio", payload=dict(FORTUNE_PAYLOAD), llm_model="m"
+    )
+    store.contents[(1, TODAY, "greeting")] = DeviceDailyContent(
+        device_id=1, content_date=TODAY, kind="greeting", payload={"text": "早上好呀"}
+    )
+
+    resp = admin_client.get(
+        "/api/admin/devices/1/fortune/daily", headers=auth_headers(role="admin")
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["generating"] is False
+    assert body["sign_fortune"]["overall"] == FORTUNE_PAYLOAD["overall"]
+    assert body["greeting"] == "早上好呀"
+    assert body["bazi_fortune"] is None  # 未录八字：恒 null
+    assert store.tasks == []  # 只读：不触发懒入队
+
+
+def test_admin_daily_fortune_persona_not_configured_404(admin_client: TestClient) -> None:
+    resp = admin_client.get(
+        "/api/admin/devices/1/fortune/daily", headers=auth_headers(role="admin")
+    )
+    assert resp.status_code == 404
+
+
+def test_admin_daily_fortune_requires_admin_role(admin_client: TestClient) -> None:
+    resp = admin_client.get(
+        "/api/admin/devices/1/fortune/daily", headers=auth_headers(role="user")
+    )
+    assert resp.status_code == 403

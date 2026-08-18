@@ -38,9 +38,12 @@ class Settings(BaseSettings):
     # Keep false by default: enabling it is an explicit deployment decision.
     llm_auto_apply_persona_growth: bool = False
 
-    # E10 运势联网搜索源（docs/12 §8 待决）：未接入前保持 false，
-    # 关闭时纯 LLM 按星象常识生成并在 source_digest 标注"非实时检索"。
-    fortune_search_enabled: bool = False
+    # E10 运势联网搜索（docs/12 §4）：MiniMax 服务端 web_search 仅 Anthropic Messages
+    # API 支持，且实测 MiniMax-M2.5 不执行服务端检索（降级为客户端 tool_use），
+    # 故 L1 整合搜索固定走 fortune_search_model（默认 MiniMax-M3，已实测可用）。
+    # 搜索未真正执行时任务走延迟重试，不静默降级为纯生成。
+    fortune_search_enabled: bool = True
+    fortune_search_model: str = "MiniMax-M3"
 
     worker_poll_interval_seconds: float = 2.0
 

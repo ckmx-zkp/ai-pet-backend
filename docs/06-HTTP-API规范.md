@@ -120,6 +120,7 @@ KB 条目遵循不可变发布：`POST /admin/kb/zodiac`、`POST /admin/kb/mbti`
 |------|------|------|
 | GET/PUT | `/devices/{id}/bazi` | 主人八字读写；未录入 GET 返回 404；PUT 覆盖写并触发当日 `bazi_fortune` 重生成 |
 | GET | `/devices/{id}/fortune/daily?date=` | 当日运势聚合；`date` 缺省为今天；当日内容缺失时后台懒入队、字段返回 null |
+| GET | `/admin/devices/{id}/fortune/daily?date=` | 运营核对用当日运势聚合（只读，与用户版同结构同语义，不触发懒入队） |
 
 ### `PUT /devices/{id}/bazi` 请求
 

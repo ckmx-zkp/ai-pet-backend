@@ -22,6 +22,8 @@ dependencies = [
     "structlog>=24.1,<26",
     "mcp>=1.2,<2",
     "httpx>=0.27,<1",
+    # Windows 无系统时区库；zoneinfo("Asia/Shanghai") 依赖 tzdata（docs/12 §4 东八区切日）
+    "tzdata>=2024.1",
 ]
 
 [project.optional-dependencies]

@@ -27,7 +27,7 @@
 
 ```
 alembic/            # 异步迁移（env.py 从环境变量读 DATABASE_URL）
-src/pet_common/     # config(pydantic-settings) / db(engine,session) / models(SQLAlchemy) / logging(structlog)
+src/pet_common/     # config(pydantic-settings) / db(engine,session) / models(SQLAlchemy) / logging(structlog) / dates(东八区切日)
 src/web_api/        # FastAPI 应用工厂、JWT 依赖、trace_id 日志中间件、routers/
 src/memory_mcp/     # MCP server：memory.search / memory.add / memory.forget
 src/agent_worker/   # PG SKIP LOCKED 消费循环 + 任务处理器注册表

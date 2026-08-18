@@ -7,7 +7,7 @@
 - 当日内容缺失时懒入队 daily_device_content，对应字段 null + generating=true。
 """
 
-from datetime import UTC, date, datetime, time
+from datetime import date, time
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from pet_common.dates import today_cn
 from pet_common.db import get_session
 from pet_common.models import (
     AgentTask,
@@ -77,7 +78,8 @@ class DailyFortuneOut(BaseModel):
 
 
 def _today() -> date:
-    return datetime.now(UTC).date()
+    """每日内容的"今日"按东八区判定（docs/12 §4）。"""
+    return today_cn()
 
 
 async def _bazi_profile(session: AsyncSession, device_id: int) -> OwnerBaziProfile | None:

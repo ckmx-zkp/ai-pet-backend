@@ -12,11 +12,17 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agent_worker.llm import LLMUnavailableError
-from agent_worker.tasks import TASK_REGISTRY, TaskDeferredError
+from agent_worker.tasks import TASK_REGISTRY, TaskDeferredError, prefill_daily_content
 from pet_common.config import Settings
+from pet_common.dates import CN_TZ, today_cn
 from pet_common.db import get_session_factory
 from pet_common.logging import get_logger
 from pet_common.models import AgentTask
+
+# 每日定时预生成（docs/12 §4）：东八区 05:00 后每 15 分钟检查一次，
+# 为已认领设备补齐当日 L1/L2 内容，消除"当天第一次开机还没有内容"的窗口。
+DAILY_PREFILL_INTERVAL = timedelta(minutes=15)
+DAILY_PREFILL_START_HOUR = 5
 
 
 async def _claim_next_task(session: AsyncSession) -> AgentTask | None:
@@ -74,11 +80,37 @@ async def _process_one() -> bool:
         return True
 
 
+def prefill_due(now: datetime, last_run_at: datetime | None) -> bool:
+    """是否到达每日预生成检查点（纯函数，便于单测）。
+
+    仅东八区 05:00 之后触发；距上次执行不足间隔则跳过。
+    """
+    if now.astimezone(CN_TZ).hour < DAILY_PREFILL_START_HOUR:
+        return False
+    return last_run_at is None or now - last_run_at >= DAILY_PREFILL_INTERVAL
+
+
+async def _run_daily_prefill() -> None:
+    """执行一次每日预生成；失败只记日志，不影响主消费循环。"""
+    log = get_logger()
+    try:
+        async with get_session_factory()() as session, session.begin():
+            stats = await prefill_daily_content(session, today_cn())
+        log.info("daily_prefill_done", **stats)
+    except Exception as exc:  # noqa: BLE001 — 调度失败不能炸 worker 主循环
+        log.error("daily_prefill_failed", error=str(exc)[:500])
+
+
 async def run_worker(settings: Settings) -> None:
-    """主循环：有任务连续处理，空队列则按 poll 间隔休眠。"""
+    """主循环：有任务连续处理，空队列则按 poll 间隔休眠；穿插每日预生成调度。"""
     log = get_logger()
     log.info("worker_started", poll_interval=settings.worker_poll_interval_seconds)
+    last_prefill_at: datetime | None = None
     while True:
+        now = datetime.now(UTC)
+        if prefill_due(now, last_prefill_at):
+            last_prefill_at = now
+            await _run_daily_prefill()
         got_task = await _process_one()
         if not got_task:
             await asyncio.sleep(settings.worker_poll_interval_seconds)

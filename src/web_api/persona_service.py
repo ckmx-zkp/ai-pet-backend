@@ -1,7 +1,6 @@
 """人设领域的数据库编排与小智 persona_pack 契约映射。"""
 
 from collections.abc import Iterable
-from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -9,6 +8,7 @@ from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from persona_compiler import KBEntry, compile_persona
+from pet_common.dates import today_cn
 from pet_common.models import (
     DailySignFortune,
     DeviceDailyContent,
@@ -136,12 +136,23 @@ def _dossier_fragments(dossier: dict[str, Any]) -> list[str]:
     return fragments
 
 
+def _payload_text(payload: object, key: str) -> str | None:
+    """jsonb payload 中取非空字符串字段；缺失返回 None。"""
+    if not isinstance(payload, dict):
+        return None
+    value = payload.get(key)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
 async def get_daily_guidance(session: AsyncSession, device_id: int, sun_sign: str) -> list[str]:
     """当日个性化引导语（E10/docs/12 §6）：greeting + 该设备星座的当日运势总述。
 
-    引导语由模型组织语言，不是固定 TTS 文本；内容缺失时返回空列表，不阻塞编译。
+    当日内容缺失时回退最近一期（昨日及以前）内容，并标注"今日早些时候"语义；
+    全无内容才返回空列表，不阻塞编译。引导语由模型组织语言，不是固定 TTS 文本。
     """
-    today = datetime.now(UTC).date()
+    today = today_cn()
     fragments: list[str] = []
     greeting_payload = await session.scalar(
         select(DeviceDailyContent.payload).where(
@@ -150,19 +161,50 @@ async def get_daily_guidance(session: AsyncSession, device_id: int, sun_sign: st
             DeviceDailyContent.kind == "greeting",
         )
     )
-    if isinstance(greeting_payload, dict):
-        text = greeting_payload.get("text")
-        if isinstance(text, str) and text.strip():
-            fragments.append(f"今天开场时可以自然地提到：{text.strip()}")
+    greeting_text = _payload_text(greeting_payload, "text")
+    greeting_stale = False
+    if greeting_text is None:
+        # 昨日回退（docs/12 §6）：取最近一期 greeting
+        fallback_payload = await session.scalar(
+            select(DeviceDailyContent.payload)
+            .where(
+                DeviceDailyContent.device_id == device_id,
+                DeviceDailyContent.content_date < today,
+                DeviceDailyContent.kind == "greeting",
+            )
+            .order_by(DeviceDailyContent.content_date.desc())
+            .limit(1)
+        )
+        greeting_text = _payload_text(fallback_payload, "text")
+        greeting_stale = greeting_text is not None
+    if greeting_text is not None:
+        if greeting_stale:
+            fragments.append(f"今天开场时可以延续今日早些时候的素材：{greeting_text}")
+        else:
+            fragments.append(f"今天开场时可以自然地提到：{greeting_text}")
     fortune_payload = await session.scalar(
         select(DailySignFortune.payload).where(
             DailySignFortune.fortune_date == today, DailySignFortune.sign == sun_sign
         )
     )
-    if isinstance(fortune_payload, dict):
-        overall = fortune_payload.get("overall")
-        if isinstance(overall, str) and overall.strip():
-            fragments.append(f"今天聊天时可以自然地提到今日运势：{overall.strip()}")
+    fortune_overall = _payload_text(fortune_payload, "overall")
+    fortune_stale = False
+    if fortune_overall is None:
+        fallback_fortune = await session.scalar(
+            select(DailySignFortune.payload)
+            .where(
+                DailySignFortune.fortune_date < today, DailySignFortune.sign == sun_sign
+            )
+            .order_by(DailySignFortune.fortune_date.desc())
+            .limit(1)
+        )
+        fortune_overall = _payload_text(fallback_fortune, "overall")
+        fortune_stale = fortune_overall is not None
+    if fortune_overall is not None:
+        if fortune_stale:
+            fragments.append(f"今天聊天时可以延续今日早些时候提到的运势：{fortune_overall}")
+        else:
+            fragments.append(f"今天聊天时可以自然地提到今日运势：{fortune_overall}")
     return fragments
 
 
