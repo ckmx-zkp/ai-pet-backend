@@ -116,16 +116,59 @@ async def generate_structured_analysis(
     )
 
 
-async def _chat_json_web_search(
-    settings: Settings, system: str, user_content: str
-) -> dict[str, Any]:
-    """MiniMax Anthropic Messages API + 服务端 web_search（docs/12 §4 整合搜索）。
+def _web_search_evidence(blocks: list[object]) -> tuple[bool, str]:
+    """从 Anthropic content 块提取是否真正检索，以及可供二次生成的摘要。
 
-    服务端工具仅该端点支持；实测 MiniMax-M2.5 会把 web_search 降级为客户端
-    tool_use（不执行检索），故固定使用 settings.fortune_search_model（默认 M3）。
-    实测 M3 是否检索具有不确定性，故用 tool_choice 显式强制 web_search
-    （MiniMax Anthropic 兼容端点完全支持 tool_choice，见官方文档）；响应未出现
-    server_tool_use/web_search_tool_result 块仍视为检索未执行，抛
+    只收检索词、来源标题和模型正文；不收录结果页正文，避免把长网页送进二次
+    生成或日志。无检索块视为未执行。
+    """
+    executed = False
+    queries: list[str] = []
+    titles: list[str] = []
+    texts: list[str] = []
+    for raw in blocks:
+        if not isinstance(raw, dict):
+            continue
+        kind = raw.get("type")
+        if kind in {"server_tool_use", "web_search_tool_result"}:
+            executed = True
+        if kind == "server_tool_use" and raw.get("name") == "web_search":
+            inp = raw.get("input")
+            if isinstance(inp, dict):
+                query = inp.get("query")
+                if isinstance(query, str) and query.strip():
+                    queries.append(query.strip()[:80])
+        if kind == "web_search_tool_result":
+            content = raw.get("content")
+            if isinstance(content, list):
+                for item in content:
+                    if isinstance(item, dict):
+                        title = item.get("title")
+                        if isinstance(title, str) and title.strip():
+                            titles.append(title.strip()[:80])
+        if kind == "text":
+            text = raw.get("text")
+            if isinstance(text, str) and text.strip():
+                texts.append(text.strip())
+    parts: list[str] = []
+    if texts:
+        parts.append(" ".join(texts)[:800])
+    if titles:
+        parts.append("来源：" + "；".join(titles[:8]))
+    if queries:
+        parts.append("检索词：" + "；".join(queries[:4]))
+    return executed, " ".join(parts).strip()[:1500]
+
+
+async def _web_search_digest(settings: Settings, query: str) -> str:
+    """MiniMax Anthropic Messages API + 服务端 web_search，只做检索摘要。
+
+    服务端工具仅该端点支持。检索本身不要求旗舰模型：官方示例只需声明
+    web_search_20250305，由供应商执行搜索。M2.5 会把该工具降级为客户端
+    tool_use（不执行），故搜索模型走 settings.fortune_search_model。
+    请求刻意不要求 JSON、不带 tool_choice：与官方示例一致。线上回归表明
+    「同一次请求既检索又输出 12 星座 JSON」会导致模型跳过检索或截断 JSON。
+    响应未出现 server_tool_use/web_search_tool_result 块仍视为检索未执行，抛
     LLMUnavailableError 走延迟重试——不静默降级为纯生成。
     """
     if not settings.llm_base_url or not settings.llm_api_key:
@@ -135,12 +178,9 @@ async def _chat_json_web_search(
     anthropic_base = f"{base[:-3]}/anthropic" if base.endswith("/v1") else f"{base}/anthropic"
     body = {
         "model": settings.fortune_search_model or settings.llm_model,
-        "max_tokens": 8000,
-        "system": system,
-        "messages": [{"role": "user", "content": user_content}],
+        "max_tokens": 2000,
+        "messages": [{"role": "user", "content": query}],
         "tools": [{"type": "web_search_20250305", "name": "web_search"}],
-        # 强制服务端检索：不强制时模型可能直接作答（2026-08-18 线上回归实测）
-        "tool_choice": {"type": "tool", "name": "web_search"},
     }
     headers = {
         "x-api-key": settings.llm_api_key,
@@ -163,35 +203,36 @@ async def _chat_json_web_search(
     blocks = data.get("content")
     if not isinstance(blocks, list):
         raise ValueError("LLM response has no content blocks")
-    block_types = {block.get("type") for block in blocks if isinstance(block, dict)}
-    if not {"server_tool_use", "web_search_tool_result"} & block_types:
+    executed, digest = _web_search_evidence(blocks)
+    if not executed:
         raise LLMUnavailableError("web search was not executed by the provider")
-    text = "".join(
-        str(block.get("text"))
-        for block in blocks
-        if isinstance(block, dict) and block.get("type") == "text" and block.get("text")
-    )
-    if not text.strip():
-        raise ValueError("LLM response has no text content")
-    return _extract_json(text)
+    if not digest:
+        raise LLMUnavailableError("web search returned no usable digest")
+    return digest
 
 
 async def generate_sign_fortunes(settings: Settings, fortune_date: date) -> dict[str, Any]:
-    """一次性整合搜索生成 12 星座当日四维度运势 + 共享玄学段（E10 L1 层）。
+    """生成 12 星座当日四维度运势 + 共享玄学段（E10 L1 层）。
 
-    fortune_search_enabled=true 时走 MiniMax 服务端 web_search 一次性整合检索
-    （当日星座运势 + 黄历宜忌/吉时/五行等玄学公开信息），由 LLM 决定分发；
-    关闭时纯 LLM 按星象常识生成，source_digest 由 prompt 与调用方双重保证标注
-    "非实时检索"（docs/12 §4）。
+    fortune_search_enabled=true 时分两步：先用 fortune_search_model（须能执行
+    服务端 web_search，现网仅 MiniMax-M3）做整合检索摘要，再用 llm_model 按
+    摘要分发 12 星座 JSON。关闭时纯 LLM 按星象常识生成，source_digest 由
+    prompt 与调用方双重保证标注“非实时检索”（docs/12 §4）。
     """
     sign_list = ", ".join(SIGN_KEYS)
     if settings.fortune_search_enabled:
+        search_query = (
+            f"请搜索 {fortune_date.isoformat()} 当日公开的十二星座运势、"
+            "黄历宜忌、吉时、五行等信息，用 3 到 6 句话汇总关键事实。"
+            "不要编写各星座完整运势，不要输出 JSON。"
+        )
+        digest = await _web_search_digest(settings, search_query)
         system = f"""你是星座运势内容生成器，为 AI 陪伴产品生成当日 12 星座运势。
-必须先调用 web_search 工具检索当日星座运势与玄学/命理（黄历宜忌、吉时、五行等）
-公开信息，再基于检索结果生成；禁止未检索直接作答。检索后由你决定如何分发到各星座。
+输入是已联网检索到的当日信息，必须基于这些信息分发到各星座，不得忽略检索结果。
+source_digest 必须以“已联网检索”开头并概括检索要点。
 只返回一个 JSON 对象，禁止 Markdown。JSON 结构：
 {{
-  "source_digest": "检索到的当日信息一句话摘要（便于运营排查，不含链接正文）",
+  "source_digest": "已联网检索：当日信息一句话摘要（不含链接正文）",
   "metaphysics": "当日玄学/命理共享摘要（黄历宜忌、吉时、五行等，1~2 句）",
   "signs": {{
     "aries": {{"overall": "一句总述", "career": "事业", "wealth": "财运",
@@ -201,12 +242,11 @@ async def generate_sign_fortunes(settings: Settings, fortune_date: date) -> dict
 }}
 signs 必须恰好包含这 12 个键：{sign_list}。每个维度一句话，语气温和积极，
 不做医疗/投资建议，不做宿命论断。"""
-        user = (
-            f"今天是 {fortune_date.isoformat()}。请先用 web_search 检索 "
-            f"{fortune_date.isoformat()} 当日的星座运势与黄历宜忌/吉时/五行信息，"
-            "再按要求输出 JSON。"
+        user = json.dumps(
+            {"date": fortune_date.isoformat(), "search_digest": digest},
+            ensure_ascii=False,
         )
-        return await _chat_json_web_search(settings, system, user)
+        return await _chat_json(settings, system, user)
 
     sign_list_note = (
         "当前无联网检索能力，按星象常识生成；source_digest 必须注明“非实时检索”。"

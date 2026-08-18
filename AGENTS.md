@@ -80,7 +80,7 @@ backend 会话完成实现且质量闸门（ruff + mypy strict + pytest）全绿
 
 - `docker compose run web-api alembic ...` 用的是**已构建镜像**：代码含新迁移时必须**先 `up -d --build` 再跑迁移**。
 - 提交前确认在 `main` 上（本机曾处于 detached HEAD，commit 后 `push origin main` 会静默 up-to-date 而实际未推送）。
-- MiniMax 联网检索：仅 `MiniMax-M3` 经 Anthropic 端点（`/anthropic/v1/messages`）支持服务端 `web_search_20250305`；M2.5 及 OpenAI 兼容端点均不支持。worker 用 `FORTUNE_SEARCH_MODEL` 单独指定搜索模型。
+- MiniMax 联网检索：仅 `MiniMax-M3` 经 Anthropic 端点（`/anthropic/v1/messages`）支持服务端 `web_search_20250305`；M2.7 / M2.7-highspeed / M2.5 及 OpenAI 兼容端点均不执行（降级为客户端 `plugin_web_search`）。worker 用 `FORTUNE_SEARCH_MODEL` 单独指定搜索模型；12 星座 JSON 分发仍走 `LLM_MODEL`。
 
 ## 依赖纪律
 

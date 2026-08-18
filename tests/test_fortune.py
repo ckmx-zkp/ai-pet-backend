@@ -629,7 +629,29 @@ def _search_settings() -> Settings:
     )
 
 
-async def test_chat_json_web_search_parses_text_when_search_executed(
+def test_web_search_evidence_extracts_digest_without_page_body() -> None:
+    import agent_worker.llm as worker_llm
+
+    executed, digest = worker_llm._web_search_evidence(
+        [
+            {"type": "text", "text": "今日宜祈福。"},
+            {"type": "server_tool_use", "name": "web_search", "input": {"query": "今日黄历"}},
+            {
+                "type": "web_search_tool_result",
+                "content": [
+                    {"type": "web_search_result", "title": "黄历网", "content": "超长正文不应入库"},
+                ],
+            },
+        ]
+    )
+    assert executed is True
+    assert "今日宜祈福" in digest
+    assert "黄历网" in digest
+    assert "今日黄历" in digest
+    assert "超长正文不应入库" not in digest
+
+
+async def test_web_search_digest_parses_when_search_executed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import agent_worker.llm as worker_llm
@@ -640,20 +662,21 @@ async def test_chat_json_web_search_parses_text_when_search_executed(
             "content": [
                 {"type": "thinking", "thinking": "（推理不外泄）"},
                 {"type": "server_tool_use", "name": "web_search", "input": {"query": "x"}},
-                {"type": "web_search_tool_result", "content": []},
-                {"type": "text", "text": '{"source_digest": "d", "signs": {}}'},
+                {"type": "web_search_tool_result", "content": [{"title": "来源A"}]},
+                {"type": "text", "text": "今日宜祈福。"},
             ]
         },
     )
-    result = await worker_llm._chat_json_web_search(_search_settings(), "sys", "user")
-    assert result == {"source_digest": "d", "signs": {}}
-    assert requests[0]["model"] == "MiniMax-M3"  # M2.5 不支持服务端检索，固定走搜索模型
+    digest = await worker_llm._web_search_digest(_search_settings(), "搜今日黄历")
+    assert "今日宜祈福" in digest
+    assert "来源A" in digest
+    assert requests[0]["model"] == "MiniMax-M3"  # M2.7/M2.5 不执行服务端检索
     assert requests[0]["tools"] == [{"type": "web_search_20250305", "name": "web_search"}]
-    # tool_choice 显式强制 web_search：不强制时模型可能直接作答（线上回归实测）
-    assert requests[0]["tool_choice"] == {"type": "tool", "name": "web_search"}
+    assert "tool_choice" not in requests[0]
+    assert "system" not in requests[0]
 
 
-async def test_chat_json_web_search_without_search_blocks_raises(
+async def test_web_search_digest_without_search_blocks_raises(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import agent_worker.llm as worker_llm
@@ -662,9 +685,9 @@ async def test_chat_json_web_search_without_search_blocks_raises(
         monkeypatch,
         {"content": [{"type": "tool_use", "name": "plugin_web_search", "input": {}}]},
     )
-    # 模型降级为客户端 tool_use（未真正检索）：抛错走延迟重试，不静默降级
+    # M2.7/M2.5 降级为客户端 tool_use（未真正检索）：抛错走延迟重试，不静默降级
     with pytest.raises(worker_llm.LLMUnavailableError):
-        await worker_llm._chat_json_web_search(_search_settings(), "sys", "user")
+        await worker_llm._web_search_digest(_search_settings(), "搜今日黄历")
 
 
 async def test_generate_sign_fortunes_routes_by_search_switch(
@@ -673,21 +696,24 @@ async def test_generate_sign_fortunes_routes_by_search_switch(
     import agent_worker.llm as worker_llm
 
     called: list[str] = []
+    search_payloads: list[str] = []
 
-    async def fake_search(settings: Settings, system: str, user: str) -> dict[str, Any]:
+    async def fake_search(settings: Settings, query: str) -> str:
         called.append("search")
-        return {"signs": {}}
+        return "已检索：宜祈福"
 
     async def fake_chat(settings: Settings, system: str, user: str) -> dict[str, Any]:
         called.append("chat")
+        search_payloads.append(user)
         return {"signs": {}}
 
-    monkeypatch.setattr(worker_llm, "_chat_json_web_search", fake_search)
+    monkeypatch.setattr(worker_llm, "_web_search_digest", fake_search)
     monkeypatch.setattr(worker_llm, "_chat_json", fake_chat)
 
     await worker_llm.generate_sign_fortunes(Settings(fortune_search_enabled=True), TODAY)
     await worker_llm.generate_sign_fortunes(Settings(fortune_search_enabled=False), TODAY)
-    assert called == ["search", "chat"]
+    assert called == ["search", "chat", "chat"]
+    assert "已检索：宜祈福" in search_payloads[0]
 
 
 # ---------- worker：每日定时预生成（docs/12 §4） ----------

@@ -38,9 +38,11 @@ class Settings(BaseSettings):
     # Keep false by default: enabling it is an explicit deployment decision.
     llm_auto_apply_persona_growth: bool = False
 
-    # E10 运势联网搜索（docs/12 §4）：MiniMax 服务端 web_search 仅 Anthropic Messages
-    # API 支持，且实测 MiniMax-M2.5 不执行服务端检索（降级为客户端 tool_use），
-    # 故 L1 整合搜索固定走 fortune_search_model（默认 MiniMax-M3，已实测可用）。
+    # E10 运势联网搜索（docs/12 §4）：MiniMax 服务端 web_search 仅 Anthropic
+    # Messages API + MiniMax-M3 会真正执行（响应含 server_tool_use）。
+    # 2026-08-18 对照实测：M2.7 / M2.7-highspeed / M2.5 均把工具降级为客户端
+    # plugin_web_search（stop_reason=tool_use，不检索）。检索步因此必须用 M3；
+    # 二次 JSON 分发仍走 llm_model（现网 M2.5），不需要旗舰模型写文案。
     # 搜索未真正执行时任务走延迟重试，不静默降级为纯生成。
     fortune_search_enabled: bool = True
     fortune_search_model: str = "MiniMax-M3"
