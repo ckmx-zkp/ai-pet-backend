@@ -13,6 +13,7 @@ from web_api.routers import (
     owner,
     peripheral,
     persona,
+    profiles,
     quizzes,
 )
 
@@ -29,5 +30,6 @@ __all__ = [
     "owner",
     "peripheral",
     "persona",
+    "profiles",
     "quizzes",
 ]

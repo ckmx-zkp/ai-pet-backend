@@ -34,6 +34,9 @@ class FakeSession:
             def all(self) -> list[object]:
                 return self._rows
 
+            def scalar_one_or_none(self) -> object | None:
+                return None
+
         kind = getattr(getattr(statement, "column_descriptions", [{}])[0], "get", lambda *_: None)
         del kind
         if self.store.memories:

@@ -147,6 +147,10 @@ class PersonaProfile(Base):
     dossier: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )
+    # 与主人的相处关系（一设备一份）：kind/label/summary/source/confidence
+    bond: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb"), default=dict
+    )
     compiled_summary: Mapped[dict[str, Any] | None] = mapped_column(JSONB)  # 编译缓存摘要
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False

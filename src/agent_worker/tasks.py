@@ -16,6 +16,7 @@ from agent_worker.llm import (
     generate_sign_fortunes,
     generate_structured_analysis,
 )
+from pet_common.bond import label_for, merge_bond, normalize_kind
 from pet_common.config import get_settings
 from pet_common.dates import today_cn
 from pet_common.fun_quiz import QUIZ_KINDS, public_questions
@@ -80,6 +81,50 @@ async def _profile(session: AsyncSession, device_id: int) -> PersonaProfile | No
     return result.scalar_one_or_none()
 
 
+def _apply_relationship(
+    session: AsyncSession,
+    device_id: int,
+    profile: PersonaProfile | None,
+    inferred: object,
+    *,
+    trigger: str,
+) -> None:
+    """落 relationship_update 分析，并按阈值回写 persona_profiles.bond。"""
+    if not isinstance(inferred, dict):
+        return
+    kind = normalize_kind(inferred.get("kind"))
+    payload: dict[str, Any] = {
+        "kind": kind,
+        "label": label_for(kind) if kind else "",
+        "summary": str(inferred.get("summary") or "")[:200],
+        "confidence": _confidence(inferred.get("confidence")),
+        "decision": str(inferred.get("decision") or "hold")[:16],
+        "evidence": _text_list(inferred.get("evidence")),
+        "applied": False,
+        "trigger": trigger,
+    }
+    if profile is not None:
+        merged = merge_bond(profile.bond, inferred, source="worker")
+        if merged is not None:
+            profile.bond = merged
+            payload["applied"] = True
+            payload["kind"] = merged["kind"]
+            payload["label"] = merged["label"]
+            payload["summary"] = merged["summary"]
+            session.add(
+                AuditLog(
+                    actor="service:agent-worker",
+                    action="relationship_update",
+                    target_type="device",
+                    target_id=str(device_id),
+                    detail={"kind": merged["kind"], "trigger": trigger},
+                )
+            )
+    session.add(
+        AnalysisResult(device_id=device_id, kind="relationship_update", payload=payload)
+    )
+
+
 async def daily_summary_handler(payload: dict[str, Any], session: AsyncSession) -> None:
     """一会话一次 LLM 分析；结果全部可审计且不进入实时语音路径。"""
     device_id = payload.get("device_id")
@@ -93,7 +138,16 @@ async def daily_summary_handler(payload: dict[str, Any], session: AsyncSession) 
         )
         return
 
-    result = await generate_structured_analysis(get_settings(), messages)
+    profile = await _profile(session, device_id)
+    memories = await _top_active_memories(session, device_id)
+    result = await generate_structured_analysis(
+        get_settings(),
+        messages,
+        memories=[
+            {"title": (row.title or "")[:80], "content": row.content[:200]} for row in memories
+        ],
+        current_bond=profile.bond if profile is not None else {},
+    )
     daily = result.get("daily_summary")
     if not isinstance(daily, dict):
         daily = {}
@@ -172,7 +226,8 @@ async def daily_summary_handler(payload: dict[str, Any], session: AsyncSession) 
         )
         session.add(analysis)
         settings = get_settings()
-        profile = await _profile(session, device_id)
+        if profile is None:
+            profile = await _profile(session, device_id)
         if (
             settings.llm_auto_apply_persona_growth
             and profile is not None
@@ -215,6 +270,9 @@ async def daily_summary_handler(payload: dict[str, Any], session: AsyncSession) 
                     status="pending",
                 )
             )
+    _apply_relationship(
+        session, device_id, profile, result.get("relationship"), trigger="session"
+    )
     if created_active:
         session.add(
             AgentTask(
@@ -634,6 +692,10 @@ async def memory_profile_handler(payload: dict[str, Any], session: AsyncSession)
             },
         )
     )
+    profile = await _profile(session, device_id)
+    _apply_relationship(
+        session, device_id, profile, result.get("relationship"), trigger="memory"
+    )
 
 
 async def purge_expired_data(session: AsyncSession, now: datetime | None = None) -> dict[str, int]:
@@ -648,7 +710,9 @@ async def purge_expired_data(session: AsyncSession, now: datetime | None = None)
     counts["messages"] = int(getattr(msg_result, "rowcount", 0) or 0)
     analysis_result = await session.execute(
         delete(AnalysisResult).where(
-            AnalysisResult.kind.in_(("daily_summary", "persona_growth", "data_export")),
+            AnalysisResult.kind.in_(
+                ("daily_summary", "persona_growth", "relationship_update", "data_export")
+            ),
             AnalysisResult.created_at < moment - timedelta(days=90),
         )
     )

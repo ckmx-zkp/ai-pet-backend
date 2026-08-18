@@ -21,6 +21,7 @@ ClaimsDep = Annotated[dict[str, Any], Depends(get_current_claims)]
 
 
 class OwnerOut(BaseModel):
+    subject: str = "owner"
     user_id: int
     sun_sign: str | None
     mbti: str | None

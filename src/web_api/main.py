@@ -21,6 +21,7 @@ from web_api.routers import (
     owner,
     peripheral,
     persona,
+    profiles,
     quizzes,
 )
 
@@ -55,6 +56,7 @@ def create_app() -> FastAPI:
     app.include_router(peripheral.router, prefix="/api", dependencies=user_dep)
     app.include_router(fortune.router, prefix="/api", dependencies=user_dep)
     app.include_router(owner.router, prefix="/api", dependencies=user_dep)
+    app.include_router(profiles.router, prefix="/api", dependencies=user_dep)
     app.include_router(quizzes.router, prefix="/api", dependencies=user_dep)
     app.include_router(natal.router, prefix="/api", dependencies=user_dep)
 

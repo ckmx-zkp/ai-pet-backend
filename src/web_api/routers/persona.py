@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from pet_common.bond import public_bond
 from pet_common.db import get_session
 from pet_common.models import PersonaProfile
 from web_api.deps import get_current_claims
@@ -39,7 +40,17 @@ class PersonaDossier(BaseModel):
     relationship: str = Field(default="", max_length=600)
 
 
+class BondView(BaseModel):
+    kind: str
+    label: str
+    summary: str
+    source: str
+    confidence: float
+    updated_at: str | None = None
+
+
 class PersonaResponse(BaseModel):
+    subject: str = "pet"
     device_id: int
     sun_sign: str | None
     mbti: str | None
@@ -47,6 +58,7 @@ class PersonaResponse(BaseModel):
     follow_latest: bool
     kb_version: int | None
     dossier: PersonaDossier
+    bond: BondView | None = None
 
 
 class PersonaPutRequest(BaseModel):
@@ -68,7 +80,9 @@ class PersonaPutRequest(BaseModel):
 
 
 def _to_response(profile: PersonaProfile) -> PersonaResponse:
+    viewed = public_bond(profile.bond)
     return PersonaResponse(
+        subject="pet",
         device_id=profile.device_id,
         sun_sign=profile.sun_sign,
         mbti=profile.mbti,
@@ -76,6 +90,7 @@ def _to_response(profile: PersonaProfile) -> PersonaResponse:
         follow_latest=profile.follow_latest,
         kb_version=profile.kb_version,
         dossier=PersonaDossier.model_validate(profile.dossier),
+        bond=BondView.model_validate(viewed) if viewed is not None else None,
     )
 
 

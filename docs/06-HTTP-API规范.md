@@ -73,8 +73,9 @@ xiaozhi 未接入前恒为 `false`。
 
 ### 主人 vs 宠物（主体钉死）
 
-- **宠物人设**挂设备：`GET/PUT /devices/{id}/persona` 的 `sun_sign` / `mbti` / `dossier` 只描述这只宠物，编译进 `persona_pack` 身份行。
-- **主人档案**挂用户账号：一账号一份，该账号下全部设备共享。问卷、趣味测试、八字、星盘写入主人，不改宠物人设。
+- **宠物人设**挂设备：`GET/PUT /devices/{id}/persona` 的 `sun_sign` / `mbti` / `dossier` 只描述这只宠物，编译进 `persona_pack` 身份行。响应带 `subject=pet` 与 `bond`（相处关系）。
+- **主人档案**挂用户账号：一账号一份，该账号下全部设备共享。问卷、趣味测试、八字、星盘写入主人，不改宠物人设。响应带 `subject=owner`。
+- **相处关系**挂设备（这对「这只宠物 × 这位主人」）：`GET/PUT /devices/{id}/relationship`；也可经 `GET /devices/{id}/profiles` 一次读出主人+宠物+关系。
 - 日运 L1 星座键取 **主人** `sun_sign`；问候语仍按该设备宠物口吻生成。
 
 ### `GET/PUT /owner` 与问卷
@@ -86,6 +87,27 @@ xiaozhi 未接入前恒为 `false`。
 `answers` 必须与问卷题面等长，每项只能是 `a` 或 `b`。`sun_sign` 可选：提供则写入主人太阳星座（须为已发布键）。响应为主人档案，**不写** `persona_profiles`。客户端不得自行映射 MBTI。平票时该维取 E/S/T/J。
 
 `GET /devices/{id}/persona/questionnaire` 与 `POST .../questionnaire` 仍可用（须设备归属），语义与 `/owner/questionnaire` 相同，只是用设备校验登录用户。
+
+### `PUT /devices/{id}/relationship`
+
+```json
+{"kind": "beloved_child", "summary": "惯着你，也吃你顶嘴"}
+```
+
+`kind` 必须是已公布枚举。响应：
+
+```json
+{
+  "kind": "beloved_child",
+  "label": "爱子",
+  "summary": "惯着你，也吃你顶嘴",
+  "source": "manual",
+  "confidence": 1.0,
+  "updated_at": "2026-08-18T12:00:00+00:00"
+}
+```
+
+未设置 GET 返回 404。worker 更新后 `source=worker`。
 
 ### `POST /devices/{id}/persona/preview`
 
@@ -116,7 +138,9 @@ worker。未发布的星座/MBTI 仍 422。
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET/PUT | `/devices/{id}/persona` | 读/写**宠物**星座、MBTI、忌口、钉扎与稳定角色档案 `dossier`；仅直选，问卷不走此表 |
+| GET/PUT | `/devices/{id}/persona` | 读/写**宠物**星座、MBTI、忌口、钉扎与 `dossier`；`bond` 只读回显（PUT 不传则保留）；问卷不走此表 |
+| GET | `/devices/{id}/profiles` | 一次返回 `{owner, pet, relationship}`，主体已分开 |
+| GET/PUT | `/devices/{id}/relationship` | 该宠物与主人的相处关系；`kind` 见 docs/02；PUT 为人工覆盖 |
 | GET/PUT | `/owner` | 当前账号主人档案：`sun_sign` / `mbti` / `quiz_results`；未建档 GET 404 |
 | GET | `/owner/questionnaire` | 主人 MBTI 问卷题面（20 题，四维各 5）；客户端只展示，不算型 |
 | POST | `/owner/questionnaire` | 提交 `answers`；**MBTI 只在 backend 计分**；写入主人档案并返回 `/owner` 对象 |
@@ -153,7 +177,7 @@ KB 条目遵循不可变发布：`POST /admin/kb/zodiac`、`POST /admin/kb/mbti`
 | POST/PATCH/DELETE | `/devices/{id}/memories[/{mid}]` | 记忆写入/编辑/删除 |
 | POST | `/devices/{id}/memories/{mid}/approve` | 候选通过（candidate → active） |
 | POST | `/devices/{id}/memories/{mid}/reject` | 候选驳回（candidate → rejected；写审计） |
-| GET | `/devices/{id}/analyses?kind=&limit&offset` | 分析结果；`kind=memory_profile` 为 E6.1 画像卡片 |
+| GET | `/devices/{id}/analyses?kind=&limit&offset` | 分析结果；`kind=memory_profile` 为 E6.1 画像；`kind=relationship_update` 为关系推断 |
 | POST | `/devices/{id}/analyses/{aid}/apply-persona-growth` | 将 `persona_growth` 建议合并到该设备私有 `overrides`，写审计 |
 | GET | `/devices/{id}/peripheral` | 外设快照 |
 | POST | `/devices/{id}/export` | 导出我的数据（E8）：同步返回 JSON 包并落 `data_export` |

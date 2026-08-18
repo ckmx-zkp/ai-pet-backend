@@ -90,6 +90,7 @@ async def build_export_bundle(session: AsyncSession, device: Device) -> dict[str
             "follow_latest": profile.follow_latest,
             "kb_version": profile.kb_version,
             "overrides": profile.overrides,
+            "bond": profile.bond,
         }
     return {
         "exported_at": datetime.now(UTC).isoformat(),

@@ -8,6 +8,7 @@ from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from persona_compiler import KBEntry, compile_persona
+from pet_common.bond import bond_prompt_fragment
 from pet_common.dates import today_cn
 from pet_common.models import (
     DailySignFortune,
@@ -231,6 +232,7 @@ async def compile_profile(session: AsyncSession, profile: PersonaProfile) -> dic
     owner = await get_owner_profile(session, profile.user_id)
     owner_sign = owner.sun_sign if owner is not None else None
     owner_line = owner_prompt_fragment(owner) if owner is not None else None
+    bond_line = bond_prompt_fragment(profile.bond)
     daily_guidance = await get_daily_guidance(session, profile.device_id, owner_sign)
     compiled = compile_persona(
         _as_kb_entry(element, "element"),
@@ -249,6 +251,7 @@ async def compile_profile(session: AsyncSession, profile: PersonaProfile) -> dic
         "system_prompt_fragments": [
             _identity_fragment(profile.sun_sign, profile.mbti),
             *([owner_line] if owner_line else []),
+            *([bond_line] if bond_line else []),
             *compiled["prompt_fragments"],
             *daily_guidance,
         ],
