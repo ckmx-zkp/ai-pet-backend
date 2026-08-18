@@ -11,6 +11,7 @@ from agent_worker.llm import (
     SIGN_KEYS,
     generate_bazi_text,
     generate_device_daily_content,
+    generate_memory_profile,
     generate_sign_fortunes,
     generate_structured_analysis,
 )
@@ -24,6 +25,7 @@ from pet_common.models import (
     DailySignFortune,
     Device,
     DeviceDailyContent,
+    KBFeedbackCandidate,
     Memory,
     OwnerBaziProfile,
     PersonaProfile,
@@ -100,6 +102,7 @@ async def daily_summary_handler(payload: dict[str, Any], session: AsyncSession) 
     }
     session.add(AnalysisResult(device_id=device_id, kind="daily_summary", payload=summary_payload))
 
+    created_active = False
     candidates = result.get("memory_candidates")
     if isinstance(candidates, list):
         device = await session.get(Device, device_id)
@@ -141,6 +144,8 @@ async def daily_summary_handler(payload: dict[str, Any], session: AsyncSession) 
                         },
                     )
                 )
+                if status == "active":
+                    created_active = True
 
     growth = result.get("persona_growth")
     if isinstance(growth, dict):
@@ -182,6 +187,38 @@ async def daily_summary_handler(payload: dict[str, Any], session: AsyncSession) 
                     detail={"confidence": confidence, "keys": sorted(suggested)[:20]},
                 )
             )
+
+    feedback = result.get("kb_feedback")
+    if isinstance(feedback, dict):
+        suggestion = feedback.get("suggestion")
+        kb_kind = str(feedback.get("kb_kind") or "").strip()
+        key = str(feedback.get("key") or "").strip()
+        if isinstance(suggestion, str) and suggestion.strip() and kb_kind and key:
+            session.add(
+                KBFeedbackCandidate(
+                    device_id=device_id,
+                    kind=kb_kind[:48],
+                    payload={
+                        "kb_kind": kb_kind[:16],
+                        "key": key[:64],
+                        "parent_key": str(feedback.get("parent_key") or "")[:64],
+                        "suggestion": suggestion.strip()[:1000],
+                        "draft_payload": feedback.get("draft_payload")
+                        if isinstance(feedback.get("draft_payload"), dict)
+                        else {"prompt_fragments": [suggestion.strip()[:400]]},
+                        "reason": str(feedback.get("reason") or "")[:500],
+                    },
+                    status="pending",
+                )
+            )
+    if created_active:
+        session.add(
+            AgentTask(
+                kind="memory_profile",
+                payload={"device_id": device_id, "reason": "approve"},
+                status="pending",
+            )
+        )
 
 
 def _task_date(payload: dict[str, Any]) -> date:
@@ -459,8 +496,116 @@ async def prefill_daily_content(session: AsyncSession, content_date: date) -> di
     return enqueued
 
 
+async def memory_profile_handler(payload: dict[str, Any], session: AsyncSession) -> None:
+    """E6.1：根据 active 记忆生成可展示画像；无记忆也写空卡片。"""
+    device_id = payload.get("device_id")
+    if not isinstance(device_id, int):
+        raise ValueError("memory_profile payload requires integer device_id")
+    reason = str(payload.get("reason") or "update")[:32]
+    memories = (
+        (
+            await session.execute(
+                select(Memory)
+                .where(Memory.device_id == device_id, Memory.status == "active")
+                .order_by(Memory.updated_at.desc())
+                .limit(20)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    items = [
+        {
+            "title": (memory.title or "")[:200],
+            "content": memory.content[:400],
+            "tags": memory.tags[:10],
+        }
+        for memory in memories
+    ]
+    if not items:
+        session.add(
+            AnalysisResult(
+                device_id=device_id,
+                kind="memory_profile",
+                payload={
+                    "remembered": [],
+                    "companion_impact": "还没有已确认的长期记忆。",
+                    "memory_count": 0,
+                    "updated_from": reason,
+                },
+            )
+        )
+        return
+    result = await generate_memory_profile(get_settings(), items, reason)
+    remembered_raw = result.get("remembered")
+    remembered: list[dict[str, Any]] = []
+    if isinstance(remembered_raw, list):
+        for item in remembered_raw[:8]:
+            if not isinstance(item, dict):
+                continue
+            summary = str(item.get("summary") or "").strip()[:120]
+            title = str(item.get("title") or "").strip()[:80]
+            if not summary and not title:
+                continue
+            remembered.append(
+                {
+                    "title": title or "记忆",
+                    "summary": summary,
+                    "tags": _text_list(item.get("tags"), maximum=8),
+                }
+            )
+    impact = str(result.get("companion_impact") or "").strip()[:400]
+    session.add(
+        AnalysisResult(
+            device_id=device_id,
+            kind="memory_profile",
+            payload={
+                "remembered": remembered,
+                "companion_impact": impact or "已确认记忆可用于之后的陪伴。",
+                "memory_count": len(items),
+                "updated_from": reason,
+            },
+        )
+    )
+
+
+async def purge_expired_data(session: AsyncSession, now: datetime | None = None) -> dict[str, int]:
+    """E8 数据保留：按文档窗口物理删除过期行。"""
+    from sqlalchemy import delete
+
+    moment = now or datetime.now(UTC)
+    counts = {"messages": 0, "analyses": 0, "tasks": 0}
+    msg_result = await session.execute(
+        delete(ChatMessage).where(ChatMessage.created_at < moment - timedelta(days=180))
+    )
+    counts["messages"] = int(getattr(msg_result, "rowcount", 0) or 0)
+    analysis_result = await session.execute(
+        delete(AnalysisResult).where(
+            AnalysisResult.kind.in_(("daily_summary", "persona_growth", "data_export")),
+            AnalysisResult.created_at < moment - timedelta(days=90),
+        )
+    )
+    counts["analyses"] = int(getattr(analysis_result, "rowcount", 0) or 0)
+    profile_result = await session.execute(
+        delete(AnalysisResult).where(
+            AnalysisResult.kind == "memory_profile",
+            AnalysisResult.created_at < moment - timedelta(days=180),
+        )
+    )
+    counts["analyses"] += int(getattr(profile_result, "rowcount", 0) or 0)
+    task_result = await session.execute(
+        delete(AgentTask).where(
+            AgentTask.status.in_(("done", "failed")),
+            AgentTask.updated_at < moment - timedelta(days=30),
+        )
+    )
+    counts["tasks"] = int(getattr(task_result, "rowcount", 0) or 0)
+    return counts
+
+
 TASK_REGISTRY: dict[str, TaskHandler] = {
     "daily_summary": daily_summary_handler,
     "daily_sign_fortune": daily_sign_fortune_handler,
     "daily_device_content": daily_device_content_handler,
+    "memory_profile": memory_profile_handler,
 }

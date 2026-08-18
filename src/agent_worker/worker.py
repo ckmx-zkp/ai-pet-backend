@@ -12,7 +12,12 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agent_worker.llm import LLMUnavailableError
-from agent_worker.tasks import TASK_REGISTRY, TaskDeferredError, prefill_daily_content
+from agent_worker.tasks import (
+    TASK_REGISTRY,
+    TaskDeferredError,
+    prefill_daily_content,
+    purge_expired_data,
+)
 from pet_common.config import Settings
 from pet_common.dates import CN_TZ, today_cn
 from pet_common.db import get_session_factory
@@ -23,6 +28,7 @@ from pet_common.models import AgentTask
 # 为已认领设备补齐当日 L1/L2 内容，消除"当天第一次开机还没有内容"的窗口。
 DAILY_PREFILL_INTERVAL = timedelta(minutes=15)
 DAILY_PREFILL_START_HOUR = 5
+DAILY_PURGE_INTERVAL = timedelta(hours=24)
 
 
 async def _claim_next_task(session: AsyncSession) -> AgentTask | None:
@@ -101,16 +107,33 @@ async def _run_daily_prefill() -> None:
         log.error("daily_prefill_failed", error=str(exc)[:500])
 
 
+async def _run_daily_purge() -> None:
+    """执行一次保留清理；失败只记日志。"""
+    log = get_logger()
+    try:
+        async with get_session_factory()() as session, session.begin():
+            stats = await purge_expired_data(session)
+        log.info("daily_purge_done", **stats)
+    except Exception as exc:  # noqa: BLE001 — 清理失败不能炸 worker 主循环
+        log.error("daily_purge_failed", error=str(exc)[:500])
+
+
 async def run_worker(settings: Settings) -> None:
-    """主循环：有任务连续处理，空队列则按 poll 间隔休眠；穿插每日预生成调度。"""
+    """主循环：有任务连续处理，空队列则按 poll 间隔休眠；穿插每日预生成与清理。"""
     log = get_logger()
     log.info("worker_started", poll_interval=settings.worker_poll_interval_seconds)
     last_prefill_at: datetime | None = None
+    last_purge_at: datetime | None = None
     while True:
         now = datetime.now(UTC)
         if prefill_due(now, last_prefill_at):
             last_prefill_at = now
             await _run_daily_prefill()
+        if now.astimezone(CN_TZ).hour >= DAILY_PREFILL_START_HOUR and (
+            last_purge_at is None or now - last_purge_at >= DAILY_PURGE_INTERVAL
+        ):
+            last_purge_at = now
+            await _run_daily_purge()
         got_task = await _process_one()
         if not got_task:
             await asyncio.sleep(settings.worker_poll_interval_seconds)

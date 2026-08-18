@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pet_common.db import get_session
 from pet_common.models import AuditLog, Memory
 from web_api.deps import get_current_claims
+from web_api.queue import enqueue_memory_profile
 from web_api.routers.devices import _current_user_id, _get_own_device
 
 router = APIRouter(prefix="/devices/{device_id}/memories", tags=["memories"])
@@ -94,6 +95,7 @@ async def create_memory(
         status="active",
     )
     session.add(row)
+    await enqueue_memory_profile(session, device_id, "create")
     await session.commit()
     return _out(row)
 
@@ -105,6 +107,8 @@ async def update_memory(
     await _get_own_device(session, device_id, _current_user_id(claims))
     row = await _memory(session, device_id, memory_id)
     row.title, row.content, row.tags = body.title, body.content, body.tags
+    if row.status == "active":
+        await enqueue_memory_profile(session, device_id, "update")
     await session.commit()
     return _out(row)
 
@@ -125,6 +129,7 @@ async def delete_memory(
             detail={},
         )
     )
+    await enqueue_memory_profile(session, device_id, "archive")
     await session.commit()
 
 
@@ -144,6 +149,8 @@ async def review_memory(
             detail={},
         )
     )
+    if outcome == "active":
+        await enqueue_memory_profile(session, device_id, "approve")
     await session.commit()
     return _out(row)
 

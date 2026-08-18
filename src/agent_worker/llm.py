@@ -108,9 +108,19 @@ async def generate_structured_analysis(
   "persona_growth": {
     "summary": "string", "suggested_overrides": {}, "confidence": 0.0,
     "decision": "approve|candidate|reject", "evidence": ["string"]
+  },
+  "kb_feedback": {
+    "kb_kind": "sign|mbti|element|",
+    "key": "string",
+    "parent_key": "string",
+    "suggestion": "string",
+    "draft_payload": {"prompt_fragments": ["string"]},
+    "reason": "string"
   }
 }
-没有合适内容时数组为空，suggested_overrides 为空对象。"""
+没有合适内容时数组为空，suggested_overrides 为空对象。
+kb_feedback 仅在对话反复暴露同一条可复用的沟通风格偏差时给出，否则为 null。
+draft_payload 必须是宠物第一人称短句，不得包含主人原话或敏感属性。"""
     return await _chat_json(
         settings, system, json.dumps({"messages": messages}, ensure_ascii=False)
     )
@@ -277,6 +287,26 @@ async def generate_bazi_text(settings: Settings, birth: dict[str, Any]) -> str:
     if not isinstance(text, str) or not text.strip():
         raise ValueError("LLM bazi chart response missing bazi_text")
     return text.strip()[:1000]
+
+
+async def generate_memory_profile(
+    settings: Settings, memories: list[dict[str, Any]], reason: str
+) -> dict[str, Any]:
+    """根据已确认记忆生成可展示的画像卡片（E6.1）。"""
+    system = """你是 AI 陪伴产品的记忆画像器。输入仅为已确认（active）记忆。
+只返回一个 JSON 对象，禁止 Markdown。不得推断疾病、性取向、精确住址或未提供的敏感属性。
+JSON 结构：
+{
+  "remembered": [{"title": "string", "summary": "一句话", "tags": ["string"]}],
+  "companion_impact": "这些记忆应如何影响陪伴，1~2 句"
+}
+remembered 最多 8 条，summary 不超过 80 字。没有记忆时 remembered 为空数组，
+companion_impact 说明暂无已确认记忆。"""
+    return await _chat_json(
+        settings,
+        system,
+        json.dumps({"reason": reason, "memories": memories}, ensure_ascii=False),
+    )
 
 
 async def generate_device_daily_content(

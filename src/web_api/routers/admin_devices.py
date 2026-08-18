@@ -20,6 +20,7 @@ from pet_common.models import (
     PersonaProfile,
 )
 from web_api.persona_service import get_mbti_entry, get_profile, get_zodiac_entry
+from web_api.queue import enqueue_memory_profile
 from web_api.routers.fortune import (
     DailyFortuneOut,
     _bazi_profile,
@@ -290,6 +291,8 @@ async def _admin_review_memory(
             detail={},
         )
     )
+    if outcome == "active":
+        await enqueue_memory_profile(session, device_id, "approve")
     await session.commit()
     return AdminMemoryResponse.model_validate(row, from_attributes=True)
 

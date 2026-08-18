@@ -54,6 +54,7 @@ def create_app() -> FastAPI:
 
     # 管理台路由：JWT + admin 角色
     app.include_router(admin.router, prefix="/api", dependencies=[Depends(require_admin)])
+    app.include_router(admin.ops_router, prefix="/api", dependencies=[Depends(require_admin)])
     app.include_router(
         admin_devices.router, prefix="/api", dependencies=[Depends(require_admin)]
     )

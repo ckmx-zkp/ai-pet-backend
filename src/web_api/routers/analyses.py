@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pet_common.db import get_session
 from pet_common.models import AnalysisResult, AuditLog, PersonaProfile
 from web_api.deps import get_current_claims
-from web_api.routers._common import not_implemented
+from web_api.exporting import build_export_bundle
 from web_api.routers.devices import _current_user_id, _get_own_device
 
 router = APIRouter(prefix="/devices/{device_id}", tags=["analyses"])
@@ -47,7 +47,7 @@ async def list_analyses(
     limit: int = Query(default=20, ge=1, le=100),  # 分页强制 limit，上限 100
     offset: int = Query(default=0, ge=0),
 ) -> list[AnalysisResponse]:
-    """分析结果：日摘要/情绪标签/记忆候选/人设契合/运势小记（kind 见 docs/04）。"""
+    """分析结果：日摘要/记忆画像/人设成长/导出快照等（kind 见 docs/04）。"""
     await _get_own_device(session, device_id, _current_user_id(claims))
     results = await _list_analyses(session, device_id, kind, limit, offset)
     return [
@@ -59,9 +59,15 @@ async def list_analyses(
 
 
 @router.post("/export")
-async def export_device_data(device_id: int) -> None:
-    """导出我的数据（建议 V0.2）。"""
-    not_implemented()
+async def export_device_data(
+    device_id: int, claims: ClaimsDep, session: SessionDep
+) -> dict[str, Any]:
+    """导出我的数据（E8）：同步 JSON 包，并落 data_export 快照。"""
+    device = await _get_own_device(session, device_id, _current_user_id(claims))
+    bundle = await build_export_bundle(session, device)
+    session.add(AnalysisResult(device_id=device_id, kind="data_export", payload=bundle))
+    await session.commit()
+    return bundle
 
 
 @router.post("/analyses/{analysis_id}/apply-persona-growth", response_model=AnalysisResponse)

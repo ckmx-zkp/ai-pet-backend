@@ -71,6 +71,38 @@ xiaozhi 未接入前恒为 `false`。
 | GET | `/admin/devices/{id}/analyses?kind=&limit&offset` | 分析结果列表 |
 | GET | `/admin/devices/{id}/peripheral` | 外设状态快照 |
 
+### `POST /devices/{id}/persona/questionnaire`
+
+```json
+{"sun_sign": "scorpio", "answers": ["a", "b", "a", "...共 20 项"]}
+```
+
+`answers` 必须与 `GET .../questionnaire` 题面等长，每项只能是 `a` 或 `b`。`sun_sign` 在
+尚未配置人设时必填；已有人设时可省略（沿用原星座）。响应与 PUT persona 相同。客户端
+不得自行映射 MBTI。平票时该维取 E/S/T/J。
+
+### `POST /devices/{id}/persona/preview`
+
+body 与 PUT persona 相同。返回 `persona_pack` 7 字段，不写 `persona_profiles`，不入队
+worker。未发布的星座/MBTI 仍 422。
+
+### `POST /devices/{id}/export` 响应
+
+```json
+{
+  "exported_at": "2026-08-18T12:00:00+00:00",
+  "device": {"id": 1, "name": "星仔", "device_uid_redacted": true},
+  "persona": {"sun_sign": "scorpio", "mbti": "ENFP", "follow_latest": true, "kb_version": 3},
+  "bazi_recorded": true,
+  "memories": [{"id": 1, "title": "...", "content": "...", "status": "active", "tags": []}],
+  "messages": [{"id": 1, "role": "user", "content_redacted": "...", "created_at": "..."}],
+  "analyses": [{"id": 1, "kind": "daily_summary", "payload": {}, "created_at": "..."}]
+}
+```
+
+`device_uid`、八字生辰、JWT、内部 token 不进包。消息最多 200 条（按时间倒序），记忆与
+分析各最多 100 条。
+
 `GET /admin/devices/lookup` 的响应至少包含 `id`、`device_uid`、`binding_id`、`name`、
 `online`、`firmware_version`、`capabilities` 与 `claimed`。该端点用于管理台读取和展示绑定码，
 不得由此认领、解绑、轮换或推断用户身份；绑定码轮换仅允许专用 rotate 端点执行并写审计。
@@ -78,7 +110,9 @@ xiaozhi 未接入前恒为 `false`。
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET/PUT | `/devices/{id}/persona` | 读/写星座、MBTI、忌口、钉扎与稳定角色档案 `dossier`（身份/背景/角色/目标/进化规则/关系） |
-| POST | `/devices/{id}/persona/questionnaire` | 问卷提交（可选） |
+| GET | `/devices/{id}/persona/questionnaire` | 返回后端问卷题面（20 题，四维各 5）；客户端只展示，不算型 |
+| POST | `/devices/{id}/persona/questionnaire` | 提交 `answers`（`a`/`b` 恰好 20 项）；**MBTI 只在 backend 计分**；写入人设并返回与 PUT 相同的 persona 对象 |
+| POST | `/devices/{id}/persona/preview` | 编译预览：body 同 PUT，**不改库**，返回固定 7 字段 `persona_pack` |
 | GET | `/admin/kb/zodiac?limit&offset` | 列表条目 |
 | POST/PUT | `/admin/kb/zodiac/{id}` | 编辑 draft |
 | POST | `/admin/kb/zodiac/{id}/publish` | 发布 |
@@ -109,10 +143,11 @@ KB 条目遵循不可变发布：`POST /admin/kb/zodiac`、`POST /admin/kb/mbti`
 | POST/PATCH/DELETE | `/devices/{id}/memories[/{mid}]` | 记忆写入/编辑/删除 |
 | POST | `/devices/{id}/memories/{mid}/approve` | 候选通过（candidate → active） |
 | POST | `/devices/{id}/memories/{mid}/reject` | 候选驳回（candidate → rejected；写审计） |
-| GET | `/devices/{id}/analyses?kind=&limit&offset` | 分析结果 |
+| GET | `/devices/{id}/analyses?kind=&limit&offset` | 分析结果；`kind=memory_profile` 为 E6.1 画像卡片 |
 | POST | `/devices/{id}/analyses/{aid}/apply-persona-growth` | 将 `persona_growth` 建议合并到该设备私有 `overrides`，写审计 |
 | GET | `/devices/{id}/peripheral` | 外设快照 |
-| POST | `/devices/{id}/export` | 导出（建议 V0.2） |
+| POST | `/devices/{id}/export` | 导出我的数据（E8）：同步返回 JSON 包并落 `data_export` |
+| GET | `/admin/ops/metrics` | 运营只读：近 24h/`pending`/`failed` 任务计数，按 kind 分组，不含原文 |
 
 ## 运势与八字（E10，设计见 docs/12）
 

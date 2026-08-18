@@ -39,10 +39,11 @@
 
 | 任务 | 产出 |
 |------|------|
-| 会话/日摘要 | `analysis_results` |
+| 会话/日摘要 | `analysis_results`（`daily_summary` / `persona_growth`）+ 可选 `kb_feedback_candidates` |
+| 记忆画像 | `analysis_results.kind=memory_profile`（E6.1） |
 | 记忆提炼 | `memories` candidate |
-| KB 反馈 | `kb_feedback_candidates` |
-| 运势小记草稿 | `analysis_results` / daily_context 建议 |
+| KB 反馈 | `kb_feedback_candidates`；admin 接受只建 draft |
+| 数据保留 | 按 90/180 天清理历史与过期任务（E8） |
 
 ### 严禁
 

@@ -1,7 +1,8 @@
-"""Memory MCP server（官方 Python MCP SDK，stdio 传输）。
+"""Memory MCP server（官方 Python MCP SDK）。
 
-工具签名先行，实现返回 not_implemented，待 Epic A 后续任务接入 memories 表。
-红线：memory.add 默认 status=candidate（source=agent）；memory.forget 软删并写 audit_logs。
+生产走 streamable HTTP `/mcp`（X-Internal-Token）；本地可用 stdio。
+三工具均接真实 `memories` 表：search 只返回该设备 active 记忆；
+add 固定 source=agent、status=candidate；forget 归档并写 audit_logs。
 """
 
 from typing import Any
@@ -16,7 +17,7 @@ from starlette.responses import JSONResponse
 from pet_common.config import get_settings
 from pet_common.db import get_session_factory
 from pet_common.logging import configure_logging
-from pet_common.models import AuditLog, Device, Memory
+from pet_common.models import AgentTask, AuditLog, Device, Memory
 
 settings = get_settings()
 mcp = FastMCP(
@@ -144,6 +145,13 @@ async def memory_forget(device_uid: str, memory_id: int) -> dict[str, Any]:
                 target_type="memory",
                 target_id=str(row.id),
                 detail={},
+            )
+        )
+        session.add(
+            AgentTask(
+                kind="memory_profile",
+                payload={"device_id": device.id, "reason": "archive"},
+                status="pending",
             )
         )
         await session.commit()

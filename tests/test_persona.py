@@ -206,6 +206,62 @@ async def test_compile_profile_prepends_identity_fragment(
     ]
 
 
+def test_get_questionnaire_returns_twenty_questions(client: TestClient) -> None:
+    response = client.get("/api/devices/1/persona/questionnaire", headers=auth_headers())
+    assert response.status_code == 200
+    body = response.json()
+    assert body["answers_required"] == 20
+    assert len(body["questions"]) == 20
+    assert "a_trait" not in body["questions"][0]
+
+
+def test_post_questionnaire_writes_scored_mbti(client: TestClient, store: FakeSession) -> None:
+    response = client.post(
+        "/api/devices/1/persona/questionnaire",
+        json={"sun_sign": "pisces", "answers": ["b"] * 20},
+        headers=auth_headers(),
+    )
+    assert response.status_code == 200
+    assert response.json()["mbti"] == "INFP"
+    assert response.json()["sun_sign"] == "pisces"
+    assert store.profile is not None
+    assert store.profile.mbti == "INFP"
+
+
+def test_post_questionnaire_requires_sign_when_unset(client: TestClient) -> None:
+    response = client.post(
+        "/api/devices/1/persona/questionnaire",
+        json={"answers": ["a"] * 20},
+        headers=auth_headers(),
+    )
+    assert response.status_code == 422
+
+
+def test_preview_persona_does_not_write(
+    client: TestClient, store: FakeSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def fake_compile(session: AsyncSession, profile: PersonaProfile) -> dict[str, object]:
+        return {
+            "kb_version": 2,
+            "system_prompt_fragments": ["preview"],
+            "style_constraints": [],
+            "taboo": [],
+            "default_emotion": "calm",
+            "blink_profile": {"interval_ms": 3200, "duration_ms": 180},
+            "retrieval_hints": [],
+        }
+
+    monkeypatch.setattr(persona_router, "compile_profile", fake_compile)
+    response = client.post(
+        "/api/devices/1/persona/preview",
+        json={"sun_sign": "pisces", "mbti": "INFP"},
+        headers=auth_headers(),
+    )
+    assert response.status_code == 200
+    assert response.json()["system_prompt_fragments"] == ["preview"]
+    assert store.profile is None
+
+
 def test_identity_fragment_unknown_sign_falls_back_to_key() -> None:
     from web_api.persona_service import _identity_fragment
 

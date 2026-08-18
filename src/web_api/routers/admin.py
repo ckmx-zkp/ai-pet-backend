@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pet_common.db import get_session
-from pet_common.models import AuditLog, KBFeedbackCandidate, MBTIKBEntry, ZodiacKBEntry
+from pet_common.models import AgentTask, AuditLog, KBFeedbackCandidate, MBTIKBEntry, ZodiacKBEntry
 
 router = APIRouter(prefix="/admin/kb", tags=["admin", "kb"])
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
@@ -290,14 +290,85 @@ async def list_kb_feedback(
     return [FeedbackOut.model_validate(row, from_attributes=True) for row in rows]
 
 
+async def _draft_from_feedback(session: AsyncSession, row: KBFeedbackCandidate) -> int | None:
+    """接受候选时只建 draft，绝不发布（E7.1 / docs/03）。"""
+    payload = row.payload if isinstance(row.payload, dict) else {}
+    kb_kind = str(payload.get("kb_kind") or row.kind or "").strip().lower()
+    key = str(payload.get("key") or "").strip()
+    if not key:
+        return None
+    draft_payload = payload.get("draft_payload")
+    if not isinstance(draft_payload, dict):
+        suggestion = str(payload.get("suggestion") or "").strip()
+        draft_payload = {"prompt_fragments": [suggestion]} if suggestion else {}
+    if kb_kind == "mbti":
+        mbti_row = MBTIKBEntry(
+            key=key.upper(),
+            version=await _next_mbti_version(session, key.upper()),
+            status="draft",
+            payload=draft_payload,
+        )
+        session.add(mbti_row)
+        await session.flush()
+        _audit(
+            session,
+            "kb_draft_create",
+            mbti_row.id,
+            {
+                "kind": "mbti",
+                "key": mbti_row.key,
+                "version": mbti_row.version,
+                "from_feedback": row.id,
+            },
+        )
+        return mbti_row.id
+    if kb_kind in {"sign", "element", "modality"}:
+        zodiac_row = ZodiacKBEntry(
+            level=kb_kind,
+            key=key.lower(),
+            parent_key=str(payload.get("parent_key") or "") or None,
+            version=await _next_zodiac_version(session, kb_kind, key.lower()),
+            status="draft",
+            payload=draft_payload,
+        )
+        session.add(zodiac_row)
+        await session.flush()
+        _audit(
+            session,
+            "kb_draft_create",
+            zodiac_row.id,
+            {
+                "kind": "zodiac",
+                "key": zodiac_row.key,
+                "version": zodiac_row.version,
+                "from_feedback": row.id,
+            },
+        )
+        return zodiac_row.id
+    return None
+
+
 async def _review_feedback(session: AsyncSession, candidate_id: int, outcome: str) -> FeedbackOut:
     row = await session.get(KBFeedbackCandidate, candidate_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="feedback candidate not found")
     if row.status != "pending":
         raise HTTPException(status.HTTP_409_CONFLICT, detail="feedback candidate already reviewed")
+    draft_id: int | None = None
+    if outcome == "accepted":
+        draft_id = await _draft_from_feedback(session, row)
+        if draft_id is None:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="feedback payload missing kb_kind/key for draft",
+            )
     row.status = outcome
-    _audit(session, f"kb_feedback_{outcome}", row.id, {"candidate_kind": row.kind})
+    _audit(
+        session,
+        f"kb_feedback_{outcome}",
+        row.id,
+        {"candidate_kind": row.kind, "draft_id": draft_id},
+    )
     await session.commit()
     return FeedbackOut.model_validate(row, from_attributes=True)
 
@@ -310,3 +381,39 @@ async def accept_kb_feedback(candidate_id: int, session: SessionDep) -> Feedback
 @router.post("/feedback/{candidate_id}/ignore", response_model=FeedbackOut)
 async def ignore_kb_feedback(candidate_id: int, session: SessionDep) -> FeedbackOut:
     return await _review_feedback(session, candidate_id, "rejected")
+
+
+ops_router = APIRouter(prefix="/admin/ops", tags=["admin", "ops"])
+
+
+@ops_router.get("/metrics")
+async def ops_metrics(session: SessionDep) -> dict[str, Any]:
+    """E8：任务计数，不含对话原文。"""
+    from datetime import UTC, datetime, timedelta
+
+    since = datetime.now(UTC) - timedelta(hours=24)
+    rows = (
+        (
+            await session.execute(
+                select(AgentTask.kind, AgentTask.status, func.count())
+                .where(AgentTask.updated_at >= since)
+                .group_by(AgentTask.kind, AgentTask.status)
+            )
+        )
+        .all()
+    )
+    pending = await session.scalar(
+        select(func.count()).select_from(AgentTask).where(AgentTask.status == "pending")
+    )
+    failed = await session.scalar(
+        select(func.count()).select_from(AgentTask).where(AgentTask.status == "failed")
+    )
+    by_kind: dict[str, dict[str, int]] = {}
+    for kind, status_, count in rows:
+        bucket = by_kind.setdefault(str(kind), {})
+        bucket[str(status_)] = int(count)
+    return {
+        "pending": int(pending or 0),
+        "failed": int(failed or 0),
+        "last_24h_by_kind": by_kind,
+    }

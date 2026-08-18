@@ -4,6 +4,14 @@
 """
 
 from persona_compiler.compiler import compile_persona
+from persona_compiler.mbti_quiz import QUESTIONS, question_public_view, score_mbti
 from persona_compiler.types import KBEntry, PersonaPack
 
-__all__ = ["KBEntry", "PersonaPack", "compile_persona"]
+__all__ = [
+    "KBEntry",
+    "PersonaPack",
+    "QUESTIONS",
+    "compile_persona",
+    "question_public_view",
+    "score_mbti",
+]
