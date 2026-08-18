@@ -29,9 +29,10 @@ mcp = FastMCP(
 
 
 async def _find_device(session: Any, device_uid: str) -> Device | None:
-    return await session.scalar(
+    result: Device | None = await session.scalar(
         select(Device).where(Device.device_uid == device_uid.strip().lower())
     )
+    return result
 
 
 class InternalTokenMiddleware(BaseHTTPMiddleware):

@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     # Keep false by default: enabling it is an explicit deployment decision.
     llm_auto_apply_persona_growth: bool = False
 
+    # E10 运势联网搜索源（docs/12 §8 待决）：未接入前保持 false，
+    # 关闭时纯 LLM 按星象常识生成并在 source_digest 标注"非实时检索"。
+    fortune_search_enabled: bool = False
+
     worker_poll_interval_seconds: float = 2.0
 
     # Memory MCP is stdio in local tooling and streamable HTTP in deployment.

@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agent_worker.llm import LLMUnavailableError
-from agent_worker.tasks import TASK_REGISTRY
+from agent_worker.tasks import TASK_REGISTRY, TaskDeferredError
 from pet_common.config import Settings
 from pet_common.db import get_session_factory
 from pet_common.logging import get_logger
@@ -57,6 +57,13 @@ async def _process_one() -> bool:
             task.run_at = datetime.now(UTC) + timedelta(minutes=10)
             task.last_error = str(exc)[:2000]
             log.info("task_deferred_llm_unavailable", task_id=task.id, kind=task.kind)
+        except TaskDeferredError as exc:
+            # 依赖未就绪（如当日 L1 星座运势未生成）：延迟重试，不消耗重试次数。
+            task.status = "pending"
+            task.attempts -= 1
+            task.run_at = datetime.now(UTC) + timedelta(minutes=10)
+            task.last_error = str(exc)[:2000]
+            log.info("task_deferred_dependency", task_id=task.id, kind=task.kind)
         except Exception as exc:  # noqa: BLE001 — worker 必须兜住所有异常，不能炸循环
             task.status = "failed" if task.attempts >= task.max_attempts else "pending"
             task.last_error = str(exc)[:2000]

@@ -114,6 +114,39 @@ KB 条目遵循不可变发布：`POST /admin/kb/zodiac`、`POST /admin/kb/mbti`
 | GET | `/devices/{id}/peripheral` | 外设快照 |
 | POST | `/devices/{id}/export` | 导出（建议 V0.2） |
 
+## 运势与八字（E10，设计见 docs/12）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET/PUT | `/devices/{id}/bazi` | 主人八字读写；未录入 GET 返回 404；PUT 覆盖写并触发当日 `bazi_fortune` 重生成 |
+| GET | `/devices/{id}/fortune/daily?date=` | 当日运势聚合；`date` 缺省为今天；当日内容缺失时后台懒入队、字段返回 null |
+
+### `PUT /devices/{id}/bazi` 请求
+
+```json
+{"calendar_type": "solar", "birth_date": "1995-11-08", "birth_time": "14:30", "birth_place": "北京", "gender": "female"}
+```
+
+`birth_time`（时辰未知）/`birth_place`/`gender` 可空；`calendar_type` 为 `solar|lunar`。
+八字为敏感数据：响应与日志不回显完整生辰原文以外的派生内容，admin 无读取接口。
+
+### `GET /devices/{id}/fortune/daily` 响应
+
+```json
+{
+  "date": "2026-08-18",
+  "sign": "scorpio",
+  "sign_fortune": {"overall": "...", "career": "...", "wealth": "...", "study": "...", "love": "..."},
+  "greeting": "今日开场素材",
+  "bazi_fortune": {"overall": "...", "career": "...", "wealth": "...", "study": "...", "love": "..."},
+  "generating": false
+}
+```
+
+设备未配置人设（无星座）返回 404；未录入八字时 `bazi_fortune` 为 null；当日内容尚未生成时
+`generating: true` 且对应字段为 null，客户端显示"生成中"空态稍后重查。`sign_fortune` 为全站
+共享内容，`greeting`/`bazi_fortune` 为该设备个性化生成（均异步产出，见 docs/12）。
+
 ## 内部接口（xiaozhi-server）
 
 | 方法 | 路径 | 说明 |
@@ -153,6 +186,10 @@ KB 条目遵循不可变发布：`POST /admin/kb/zodiac`、`POST /admin/kb/mbti`
 > （"你的星座是天蝎座，MBTI 是 ENFP；被问到时自然承认……"），其后才是 KB 风格片段。
 > 原因：KB v2 片段只描述沟通风格，模型在基础行为"不编造人设"约束下会否认自己有星座。
 > 契约 7 字段不变，仅片段内容语义明确化。
+>
+> 2026-08-18（E10/docs/12）：`system_prompt_fragments` 末尾可追加当日个性化内容引导语
+> （打招呼素材、当日星座运势总述），由编译层读 `device_daily_contents`/`daily_sign_fortunes`
+> 拼入；契约 7 字段不变，小智侧无感知。
 
 ### `POST /api/internal/chat/events` 请求 schema（钉死 5 字段）
 

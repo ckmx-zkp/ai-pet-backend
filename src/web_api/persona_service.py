@@ -1,6 +1,7 @@
 """人设领域的数据库编排与小智 persona_pack 契约映射。"""
 
 from collections.abc import Iterable
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -8,7 +9,13 @@ from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from persona_compiler import KBEntry, compile_persona
-from pet_common.models import MBTIKBEntry, PersonaProfile, ZodiacKBEntry
+from pet_common.models import (
+    DailySignFortune,
+    DeviceDailyContent,
+    MBTIKBEntry,
+    PersonaProfile,
+    ZodiacKBEntry,
+)
 
 
 def _latest_or_pinned(statement: Select[Any], kb_version: int | None) -> Select[Any]:
@@ -129,6 +136,36 @@ def _dossier_fragments(dossier: dict[str, Any]) -> list[str]:
     return fragments
 
 
+async def get_daily_guidance(session: AsyncSession, device_id: int, sun_sign: str) -> list[str]:
+    """当日个性化引导语（E10/docs/12 §6）：greeting + 该设备星座的当日运势总述。
+
+    引导语由模型组织语言，不是固定 TTS 文本；内容缺失时返回空列表，不阻塞编译。
+    """
+    today = datetime.now(UTC).date()
+    fragments: list[str] = []
+    greeting_payload = await session.scalar(
+        select(DeviceDailyContent.payload).where(
+            DeviceDailyContent.device_id == device_id,
+            DeviceDailyContent.content_date == today,
+            DeviceDailyContent.kind == "greeting",
+        )
+    )
+    if isinstance(greeting_payload, dict):
+        text = greeting_payload.get("text")
+        if isinstance(text, str) and text.strip():
+            fragments.append(f"今天开场时可以自然地提到：{text.strip()}")
+    fortune_payload = await session.scalar(
+        select(DailySignFortune.payload).where(
+            DailySignFortune.fortune_date == today, DailySignFortune.sign == sun_sign
+        )
+    )
+    if isinstance(fortune_payload, dict):
+        overall = fortune_payload.get("overall")
+        if isinstance(overall, str) and overall.strip():
+            fragments.append(f"今天聊天时可以自然地提到今日运势：{overall.strip()}")
+    return fragments
+
+
 async def compile_profile(session: AsyncSession, profile: PersonaProfile) -> dict[str, Any]:
     """从发布中的 KB 编译固定 7 字段的服务间 persona_pack。"""
     if profile.sun_sign is None or profile.mbti is None:
@@ -143,6 +180,8 @@ async def compile_profile(session: AsyncSession, profile: PersonaProfile) -> dic
     if element is None or mbti is None:
         raise HTTPException(status.HTTP_409_CONFLICT, detail="published persona KB unavailable")
 
+    # E10：当日 greeting 与星座运势总述以引导语追加到片段末尾（docs/12 §6，契约 7 字段不变）
+    daily_guidance = await get_daily_guidance(session, profile.device_id, profile.sun_sign)
     compiled = compile_persona(
         _as_kb_entry(element, "element"),
         _as_kb_entry(sign, "sign"),
@@ -152,6 +191,7 @@ async def compile_profile(session: AsyncSession, profile: PersonaProfile) -> dic
             "prompt_fragments": _merge_list([profile.overrides], "prompt_fragments")
             + _dossier_fragments(profile.dossier),
         },
+        daily_context="\n".join(daily_guidance) or None,
     )
     payloads = [element.payload, sign.payload, mbti.payload, profile.overrides]
     return {
@@ -159,6 +199,7 @@ async def compile_profile(session: AsyncSession, profile: PersonaProfile) -> dic
         "system_prompt_fragments": [
             _identity_fragment(profile.sun_sign, profile.mbti),
             *compiled["prompt_fragments"],
+            *daily_guidance,
         ],
         "style_constraints": _merge_list(payloads, "style_constraints"),
         "taboo": compiled["taboo"],

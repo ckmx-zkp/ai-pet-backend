@@ -74,11 +74,27 @@ class FakeSession:
             None,
         )
 
+    async def execute(self, statement: object) -> "_EmptyResult":
+        # E10 懒生成触发（seen / session end）会查 persona 与当日内容；
+        # 本 FakeSession 不支撑真实查询，统一返回空 → 视为无人设、不入队。
+        return _EmptyResult()
+
     async def flush(self) -> None:
         pass
 
     async def commit(self) -> None:
         pass
+
+
+class _EmptyResult:
+    def scalar_one_or_none(self) -> None:
+        return None
+
+    def scalars(self) -> "_EmptyResult":
+        return self
+
+    def all(self) -> list[object]:
+        return []
 
 
 def internal_headers() -> dict[str, str]:

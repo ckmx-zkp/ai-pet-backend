@@ -181,6 +181,13 @@ async def test_compile_profile_prepends_identity_fragment(
     monkeypatch.setattr(persona_service, "get_zodiac_entry", fake_get_zodiac)
     monkeypatch.setattr(persona_service, "get_mbti_entry", fake_get_mbti)
 
+    async def fake_daily_guidance(
+        session: AsyncSession, device_id: int, sun_sign: str
+    ) -> list[str]:
+        return []  # E10 当日内容缺失时不追加引导语，保持既有片段顺序断言
+
+    monkeypatch.setattr(persona_service, "get_daily_guidance", fake_daily_guidance)
+
     profile = PersonaProfile(
         user_id=1,
         device_id=1,

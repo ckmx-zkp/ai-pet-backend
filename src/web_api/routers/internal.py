@@ -31,6 +31,7 @@ from pet_common.models import (
 )
 from pet_common.redaction import redact_text
 from web_api.persona_service import compile_profile, get_profile
+from web_api.routers.fortune import enqueue_daily_content_if_missing
 
 router = APIRouter(prefix="/internal", tags=["internal"])
 
@@ -314,6 +315,8 @@ async def end_chat_session(session_id: str, session: SessionDep) -> SessionEndRe
     )
     session.add(task)
     await session.flush()  # 取 task 自增 id
+    # E10 懒生成：会话结束时当日设备内容缺失则入队（先查目标表，不重复入队）
+    await enqueue_daily_content_if_missing(session, chat_session.device_id, _utcnow().date())
     await session.commit()
     return SessionEndResponse(session_id=session_id, ended=True, task_id=task.id)
 
@@ -350,6 +353,9 @@ async def device_seen(payload: DeviceSeenIn, session: SessionDep) -> DeviceSeenR
         device.firmware_version = payload.firmware_version
     if payload.capabilities is not None:
         device.capabilities = payload.capabilities
+    # E10 懒生成：已认领设备活跃上报时，当日内容缺失则入队（先查目标表，不重复入队）
+    if device.user_id is not None:
+        await enqueue_daily_content_if_missing(session, device.id, now.date())
     await session.commit()
     return DeviceSeenResponse(
         id=device.id,

@@ -72,6 +72,10 @@ pytest
 docker compose up -d --build               # postgres+redis+web-api+memory-mcp+agent-worker
 ```
 
+## 部署授权（2026-08-18 用户拍板）
+
+backend 会话完成实现且质量闸门（ruff + mypy strict + pytest）全绿后，**可自动 commit + push 并部署到 ECS**（`git pull` → 迁移 → 重建受影响容器 → 验证 `/healthz` 与关键端点），随后回写 `docs/09` 与协作看板，无需逐次请示。迁移文件仍由 AI 生成，此授权覆盖"人工 review 后才执行"的旧纪律；回滚用 `git revert` + 重新部署。
+
 ## 依赖纪律
 
 - 依赖钉版本：安装后 `pip freeze > requirements.lock` 进仓；新增依赖必须 review。

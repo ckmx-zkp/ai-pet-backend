@@ -9,6 +9,7 @@
 """
 
 from datetime import date, datetime
+from datetime import time as dt_time
 from typing import Any
 
 from pgvector.sqlalchemy import Vector
@@ -22,6 +23,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    Time,
     func,
     text,
 )
@@ -342,6 +344,80 @@ class PersonaDailyContext(Base):
     )
 
     __table_args__ = (Index("uq_persona_daily_context_sign_date", "sign", "date", unique=True),)
+
+
+class DailySignFortune(Base):
+    """L1 共享星座日运（E10/docs/12）：全站按 (fortune_date, sign) 唯一，每日每星座一行。"""
+
+    __tablename__ = "daily_sign_fortunes"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    fortune_date: Mapped[date] = mapped_column(Date, nullable=False)
+    sign: Mapped[str] = mapped_column(String(32), nullable=False)  # 12 星座稳定键 aries...
+    # payload 钉死键：overall/career/wealth/study/love/source_digest
+    payload: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    llm_model: Mapped[str | None] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        Index("uq_daily_sign_fortunes_date_sign", "fortune_date", "sign", unique=True),
+        Index("ix_daily_sign_fortunes_date", "fortune_date"),
+    )
+
+
+class DeviceDailyContent(Base):
+    """L2 设备级日内容（E10/docs/12）：kind=greeting|bazi_fortune，按 (device_id, date, kind) 唯一。
+    """
+
+    __tablename__ = "device_daily_contents"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    device_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("devices.id", ondelete="CASCADE"), nullable=False
+    )
+    content_date: Mapped[date] = mapped_column(Date, nullable=False)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)  # greeting|bazi_fortune
+    # greeting: {"text": "..."}；bazi_fortune: {"overall","career","wealth","study","love"}
+    payload: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        Index(
+            "uq_device_daily_contents_device_date_kind",
+            "device_id",
+            "content_date",
+            "kind",
+            unique=True,
+        ),
+        Index("ix_device_daily_contents_device_date", "device_id", "content_date"),
+    )
+
+
+class OwnerBaziProfile(TimestampMixin, Base):
+    """主人八字（E10/docs/12，敏感数据）：一设备一行；原始生辰只供 worker 生成使用，
+
+    不进 persona_pack/C5/日志；bazi_text 为 LLM 排盘缓存，出生信息变更时清空重排。
+    """
+
+    __tablename__ = "owner_bazi_profiles"
+
+    device_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("devices.id", ondelete="CASCADE"), primary_key=True
+    )
+    calendar_type: Mapped[str] = mapped_column(String(8), nullable=False)  # solar|lunar
+    birth_date: Mapped[date] = mapped_column(Date, nullable=False)
+    birth_time: Mapped[dt_time | None] = mapped_column(Time)  # 可空=时辰未知
+    birth_place: Mapped[str | None] = mapped_column(String(128))
+    gender: Mapped[str | None] = mapped_column(String(16))
+    bazi_text: Mapped[str | None] = mapped_column(Text)  # LLM 四柱排盘缓存
 
 
 class AgentTask(TimestampMixin, Base):

@@ -13,6 +13,7 @@ from web_api.routers import (
     analyses,
     auth,
     devices,
+    fortune,
     internal,
     memories,
     messages,
@@ -49,6 +50,7 @@ def create_app() -> FastAPI:
     app.include_router(memories.router, prefix="/api", dependencies=user_dep)
     app.include_router(analyses.router, prefix="/api", dependencies=user_dep)
     app.include_router(peripheral.router, prefix="/api", dependencies=user_dep)
+    app.include_router(fortune.router, prefix="/api", dependencies=user_dep)
 
     # 管理台路由：JWT + admin 角色
     app.include_router(admin.router, prefix="/api", dependencies=[Depends(require_admin)])
