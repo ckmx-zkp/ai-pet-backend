@@ -1,0 +1,53 @@
+.env.example
+  s_eb774045fc6449::t_9b662011a39c11 24-25
+AGENTS.md
+  s_eb774045fc6449::t_59eb667810c763 75-78
+docs/02-数据模型与表结构.md
+  s_eb774045fc6449::t_f984f9c2308527 21-24,62-73
+docs/06-HTTP-API规范.md
+  s_eb774045fc6449::t_36f783cae535c8 117-149,189-192
+docs/09-部署进度与运维.md
+  s_eb774045fc6449::t_da7778a02ef8da 12
+docs/10-后端开发计划.md
+  s_eb774045fc6449::t_deb6e6028a7383 3,23-27
+src/agent_worker/llm.py
+  s_eb774045fc6449::t_c260768a60e1e4 3-6,11,18-33,59,69,91-174
+src/agent_worker/tasks.py
+  s_eb774045fc6449::t_9d21996ebfa5ff 4,10-16,18-29,33-39,186-397
+src/agent_worker/worker.py
+  s_eb774045fc6449::t_b690727fda5d16 15,60-66
+src/memory_mcp/server.py
+  s_eb774045fc6449::t_6be8c7173943d8 32,35
+src/pet_common/config.py
+  s_eb774045fc6449::t_2f38c1f7544251 41-44
+src/pet_common/models.py
+  s_eb774045fc6449::t_6f59a4d7f8be4d 12,26,349-422
+src/web_api/main.py
+  s_eb774045fc6449::t_e9c9f22fec10da 16,53
+src/web_api/persona_service.py
+  s_eb774045fc6449::t_887fc4ef31c454 4,12-18,139-168,183-184,194,202
+src/web_api/routers/__init__.py
+  s_eb774045fc6449::t_ed4bb7cab9f38e 8,21
+src/web_api/routers/internal.py
+  s_eb774045fc6449::t_91731adf040f7f 34,318-319,356-358
+tests/test_internal.py
+  s_eb774045fc6449::t_4733d6524b8497 77-81,89-99
+tests/test_persona.py
+  s_eb774045fc6449::t_49998f7ce76080 184-190
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "ff3b2d4ad507866fbae945988130138fbdc89b62",
+  "prompts": {},
+  "sessions": {
+    "s_eb774045fc6449": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a012ed-0c1b-7c40-9478-ca5dd94206e1",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "kunpeng2.zhang <kunpeng2.zhang@ly.com>"
+    }
+  }
+}
