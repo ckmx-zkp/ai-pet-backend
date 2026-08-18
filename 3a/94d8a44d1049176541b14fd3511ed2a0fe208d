@@ -1,0 +1,33 @@
+docs/06-HTTP-API规范.md
+  s_ada4240553a2f0::t_32b70f11f75576 123
+docs/12-每日运势与个性化内容设计.md
+  s_ada4240553a2f0::t_81240f1f67b269 114-115
+pyproject.toml
+  s_eb774045fc6449::t_bac2a271bcabe7 25-26
+src/web_api/routers/admin_devices.py
+  s_eb774045fc6449::t_782e812cafb987 3,12,23-29,330-369
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "3a94d8a44d1049176541b14fd3511ed2a0fe208d",
+  "prompts": {},
+  "sessions": {
+    "s_ada4240553a2f0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01302-988c-7402-9070-52b689d4c5ca",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "kunpeng2.zhang <kunpeng2.zhang@ly.com>"
+    },
+    "s_eb774045fc6449": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a012ed-0c1b-7c40-9478-ca5dd94206e1",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "kunpeng2.zhang <kunpeng2.zhang@ly.com>"
+    }
+  }
+}
