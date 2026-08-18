@@ -216,8 +216,9 @@ async def test_compile_profile_prepends_identity_fragment(
     )
     pack = await persona_service.compile_profile(cast(AsyncSession, store), profile)
     fragments = pack["system_prompt_fragments"]
-    assert fragments[0] == "你的星座是天蝎座，MBTI 是 ENFP；被问到时自然承认，平时不用主动提起。"
-    assert fragments[1:] == [
+    assert fragments[0].startswith("你是一只会开口的桌面宠物")
+    assert fragments[1] == "你的星座是天蝎座，MBTI 是 ENFP；被问到时自然承认，平时不用主动提起。"
+    assert fragments[2:] == [
         "与天蝎风格用户交流时减少表面寒暄。",
         "与 ENFP 风格用户交流时保留自主选择。",
     ]

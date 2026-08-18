@@ -81,11 +81,11 @@ def owner_prompt_fragment(owner: OwnerProfile) -> str | None:
         if isinstance(title, str) and title.strip():
             quiz_bits.append(f"{kind}测出「{title.strip()[:40]}」")
     if quiz_bits:
-        parts.append("最近趣味测试：" + "；".join(quiz_bits[:4]))
+        parts.append("他玩过的小测试：" + "；".join(quiz_bits[:4]))
     if not parts:
         return None
     return (
-        "这些是主人的信息，不是你自己的身份："
+        "这些是主人的事，别说成你自己的："
         + "，".join(parts)
-        + "。陪他时按这个理解他；被问到你自己的星座或 MBTI 时只说宠物人设。"
+        + "。懂他就好，被问到你自己的星座或性格时只说宠物这边的。"
     )

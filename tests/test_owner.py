@@ -129,7 +129,7 @@ def test_owner_prompt_fragment_marks_owner_not_pet() -> None:
     )
     line = owner_prompt_fragment(owner)
     assert line is not None
-    assert line.startswith("这些是主人的信息")
+    assert line.startswith("这些是主人的事")
     assert "摩羯座" in line
     assert "INFP" in line
     assert "太阳充电" in line

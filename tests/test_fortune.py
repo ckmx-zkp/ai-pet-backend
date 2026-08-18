@@ -346,7 +346,7 @@ async def test_compile_profile_appends_daily_guidance(monkeypatch: pytest.Monkey
     ) -> MBTIKBEntry | None:
         return MBTIKBEntry(key="ENFP", version=2, status="published", payload={})
 
-    guidance = ["今天开场时可以自然地提到：昨晚的星星很亮", "今天聊天时可以自然地提到今日运势：顺"]
+    guidance = ["刚见面时可以随口说：昨晚的星星很亮", "主人今天大概是：顺。别念稿，最多带半句。"]
     captured: dict[str, Any] = {}
 
     async def fake_daily_guidance(
@@ -381,8 +381,9 @@ async def test_compile_profile_appends_daily_guidance(monkeypatch: pytest.Monkey
     assert captured["args"] == (1, "scorpio")  # 运势键是主人星座
     assert captured["daily_context"] == "\n".join(guidance)
     fragments = pack["system_prompt_fragments"]
-    assert fragments[0].startswith("你的星座是天蝎座")
-    assert fragments[1].startswith("这些是主人的信息")
+    assert fragments[0].startswith("你是一只会开口的桌面宠物")
+    assert fragments[1].startswith("你的星座是天蝎座")
+    assert any(item.startswith("这些是主人的事") for item in fragments)
     assert fragments[-2:] == guidance  # 引导语追加在片段末尾，7 字段契约不变
 
 
@@ -893,8 +894,8 @@ async def test_daily_guidance_today_content_no_fallback() -> None:
         cast(AsyncSession, session), 1, "scorpio"
     )
     assert fragments == [
-        "今天开场时可以自然地提到：今天的素材",
-        "今天聊天时可以自然地提到今日运势：今日顺",
+        "刚见面时可以随口说：今天的素材",
+        "主人今天大概是：今日顺。别念稿，最多带半句。",
     ]
 
 
@@ -914,8 +915,8 @@ async def test_daily_guidance_falls_back_to_recent_content() -> None:
     )
     # 回退内容标注"今日早些时候"语义
     assert fragments == [
-        "今天开场时可以延续今日早些时候的素材：昨天聊到一半的星星话题",
-        "今天聊天时可以延续今日早些时候提到的运势：昨日整体平顺",
+        "刚开口可以像昨天那样轻轻带一句：昨天聊到一半的星星话题",
+        "主人这阵子的日子大概还是：昨日整体平顺。别念稿，最多带半句。",
     ]
 
 

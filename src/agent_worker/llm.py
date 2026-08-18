@@ -380,7 +380,7 @@ async def generate_device_daily_content(
 主人太阳星座/MBTI（可能为 null）、近期摘要、已确认记忆、主人星座的当日运势与主人八字排盘。
 只返回一个 JSON 对象，禁止 Markdown。JSON 结构：
 {
-  "greeting": "今天开场素材，1~2 句，宠物口吻，可引主人运势或记忆，勿把主人星座说成自己的",
+  "greeting": "刚见面时宠物会随口说的1~2句，像家里那只小东西，可轻轻带主人近况，勿念稿、勿说系统",
   "bazi_fortune": {"overall": "一句总述", "career": "事业", "wealth": "财运",
     "study": "学业", "love": "情感"}
 }

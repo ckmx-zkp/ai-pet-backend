@@ -107,6 +107,15 @@ _SIGN_NAMES = {
 }
 
 
+def _speaking_posture() -> str:
+    """拟人口吻：禁止把后台状态念给主人听（产品避雷「不要做成会说话的后台」）。"""
+    return (
+        "你是一只会开口的桌面宠物，不是后台、不是说明书。"
+        "不要提系统、任务、生成中、知识库、接口、素材、队列。"
+        "短句回嘴，像家里那只小东西；硬件和调试的事能不提就不提。"
+    )
+
+
 def _identity_fragment(sun_sign: str, mbti: str) -> str:
     """身份片段：KB 片段只描述沟通风格，身份事实由编译层显式给出。
 
@@ -119,22 +128,23 @@ def _identity_fragment(sun_sign: str, mbti: str) -> str:
 def _dossier_fragments(dossier: dict[str, Any]) -> list[str]:
     """稳定档案转为 prompt 片段；只取用户/Admin 明确保存的字段。"""
     labels = {
-        "identity": "我是谁",
-        "background": "背景",
-        "roles": "角色",
-        "goals": "目标",
-        "evolution_rules": "进化规则",
-        "relationship": "与主人的关系",
+        "identity": "",
+        "background": "你记得自己",
+        "roles": "你常这样待人",
+        "goals": "你在意",
+        "evolution_rules": "你会慢慢变成",
+        "relationship": "主人写过你们",
     }
     fragments: list[str] = []
     for key, label in labels.items():
         value = dossier.get(key)
         if isinstance(value, str) and value.strip():
-            fragments.append(f"{label}：{value.strip()}")
+            fragments.append(f"{label}：{value.strip()}" if label else value.strip())
         elif isinstance(value, list):
             items = [item.strip() for item in value if isinstance(item, str) and item.strip()]
             if items:
-                fragments.append(f"{label}：" + "；".join(items[:8]))
+                joined = "；".join(items[:8])
+                fragments.append(f"{label}：{joined}" if label else joined)
     return fragments
 
 
@@ -183,9 +193,9 @@ async def get_daily_guidance(
         greeting_stale = greeting_text is not None
     if greeting_text is not None:
         if greeting_stale:
-            fragments.append(f"今天开场时可以延续今日早些时候的素材：{greeting_text}")
+            fragments.append(f"刚开口可以像昨天那样轻轻带一句：{greeting_text}")
         else:
-            fragments.append(f"今天开场时可以自然地提到：{greeting_text}")
+            fragments.append(f"刚见面时可以随口说：{greeting_text}")
     fortune_overall = None
     fortune_stale = False
     if sun_sign:
@@ -208,9 +218,9 @@ async def get_daily_guidance(
             fortune_stale = fortune_overall is not None
     if fortune_overall is not None:
         if fortune_stale:
-            fragments.append(f"今天聊天时可以延续今日早些时候提到的运势：{fortune_overall}")
+            fragments.append(f"主人这阵子的日子大概还是：{fortune_overall}。别念稿，最多带半句。")
         else:
-            fragments.append(f"今天聊天时可以自然地提到今日运势：{fortune_overall}")
+            fragments.append(f"主人今天大概是：{fortune_overall}。别念稿，最多带半句。")
     return fragments
 
 
@@ -249,6 +259,7 @@ async def compile_profile(session: AsyncSession, profile: PersonaProfile) -> dic
     return {
         "kb_version": compiled["kb_version"],
         "system_prompt_fragments": [
+            _speaking_posture(),
             _identity_fragment(profile.sun_sign, profile.mbti),
             *([owner_line] if owner_line else []),
             *([bond_line] if bond_line else []),

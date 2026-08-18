@@ -171,12 +171,12 @@ async def build_device_context(session: AsyncSession, device: Device) -> list[st
     if isinstance(summary, AnalysisResult):
         text = summary.payload.get("summary")
         if isinstance(text, str) and text.strip():
-            items.append(f"近期小记：{text}")
+            items.append(f"昨天你们还聊到：{text}")
         follow_up = summary.payload.get("follow_up")
         if isinstance(follow_up, list):
             prompts = [item.strip() for item in follow_up if isinstance(item, str) and item.strip()]
             if prompts:
-                items.append("可自然跟进：" + "；".join(prompts[:2]))
+                items.append("要是聊得上，可以再问问：" + "；".join(prompts[:2]))
     memories = (
         (
             await session.execute(
@@ -191,7 +191,7 @@ async def build_device_context(session: AsyncSession, device: Device) -> list[st
     )
     for memory in memories:
         title = f"{memory.title}：" if memory.title else ""
-        items.append(f"已确认记忆：{title}{memory.content}")
+        items.append(f"你记得{title}{memory.content}")
     return _bounded_context(items)
 
 
