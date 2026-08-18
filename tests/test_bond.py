@@ -11,8 +11,17 @@ from pet_common.bond import (
 
 def test_normalize_kind_accepts_label() -> None:
     assert normalize_kind("爱子") == "beloved_child"
+    assert normalize_kind("爱宠") == "cherished_pet"
     assert normalize_kind("love_hate") == "love_hate"
     assert normalize_kind("unknown") is None
+
+
+def test_catalog_has_family_and_pet_roles() -> None:
+    from pet_common.bond import RELATIONSHIP_KINDS, catalog
+
+    assert len(RELATIONSHIP_KINDS) >= 20
+    labels = {item["label"] for item in catalog()}
+    assert {"爱宠", "家中幼崽", "掌上明珠", "情感伴侣", "逆子", "技术搭子"} <= labels
 
 
 def test_first_bond_requires_moderate_confidence() -> None:

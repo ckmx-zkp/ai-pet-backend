@@ -13,6 +13,7 @@ from typing import Any
 
 import httpx
 
+from pet_common.bond import kind_prompt_block, kind_union
 from pet_common.config import Settings
 
 # 12 星座稳定键（docs/12 §3），顺序固定便于 prompt 与校验。
@@ -114,7 +115,7 @@ async def generate_structured_analysis(
     "decision": "approve|candidate|reject", "evidence": ["string"]
   },
   "relationship": {
-    "kind": "partner|rebellious_child|beloved_child|love_hate|confidant|companion|guardian",
+    "kind": "KIND_UNION",
     "summary": "不超过80字，描述这对主人和宠物此刻怎么相处",
     "confidence": 0.0,
     "decision": "approve|hold",
@@ -129,12 +130,12 @@ async def generate_structured_analysis(
     "reason": "string"
   }
 }
-relationship.kind 含义：partner=情感伴侣，rebellious_child=逆子，beloved_child=爱子，
-love_hate=相爱相杀，confidant=知己，companion=陪伴伙伴，guardian=守护者。
+GLOSSARY
 证据不足或只是单次玩笑时 decision=hold，不要因为一句气话就改成逆子。
 没有合适内容时数组为空，suggested_overrides 为空对象。
 kb_feedback 仅在对话反复暴露同一条可复用的沟通风格偏差时给出，否则为 null。
 draft_payload 必须是宠物第一人称短句，不得包含主人原话或敏感属性。"""
+    system = system.replace("KIND_UNION", kind_union()).replace("GLOSSARY", kind_prompt_block())
     return await _chat_json(
         settings,
         system,
@@ -323,7 +324,7 @@ JSON 结构：
   "remembered": [{"title": "string", "summary": "一句话", "tags": ["string"]}],
   "companion_impact": "这些记忆应如何影响陪伴，1~2 句",
   "relationship": {
-    "kind": "partner|rebellious_child|beloved_child|love_hate|confidant|companion|guardian",
+    "kind": "KIND_UNION",
     "summary": "不超过80字",
     "confidence": 0.0,
     "decision": "approve|hold",
@@ -332,8 +333,8 @@ JSON 结构：
 }
 remembered 最多 8 条，summary 不超过 80 字。没有记忆时 remembered 为空数组，
 companion_impact 说明暂无已确认记忆。关系证据不足时 decision=hold。
-relationship.kind：partner=情感伴侣，rebellious_child=逆子，beloved_child=爱子，
-love_hate=相爱相杀，confidant=知己，companion=陪伴伙伴，guardian=守护者。"""
+GLOSSARY"""
+    system = system.replace("KIND_UNION", kind_union()).replace("GLOSSARY", kind_prompt_block())
     return await _chat_json(
         settings,
         system,

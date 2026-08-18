@@ -57,6 +57,7 @@ def create_app() -> FastAPI:
     app.include_router(fortune.router, prefix="/api", dependencies=user_dep)
     app.include_router(owner.router, prefix="/api", dependencies=user_dep)
     app.include_router(profiles.router, prefix="/api", dependencies=user_dep)
+    app.include_router(profiles.kinds_router, prefix="/api", dependencies=user_dep)
     app.include_router(quizzes.router, prefix="/api", dependencies=user_dep)
     app.include_router(natal.router, prefix="/api", dependencies=user_dep)
 

@@ -140,7 +140,8 @@ worker。未发布的星座/MBTI 仍 422。
 |------|------|------|
 | GET/PUT | `/devices/{id}/persona` | 读/写**宠物**星座、MBTI、忌口、钉扎与 `dossier`；`bond` 只读回显（PUT 不传则保留）；问卷不走此表 |
 | GET | `/devices/{id}/profiles` | 一次返回 `{owner, pet, relationship}`，主体已分开 |
-| GET/PUT | `/devices/{id}/relationship` | 该宠物与主人的相处关系；`kind` 见 docs/02；PUT 为人工覆盖 |
+| GET | `/relationship-kinds` | 全部相处关系种类（kind + 中文 label），供直选 |
+| GET/PUT | `/devices/{id}/relationship` | 该宠物与主人的相处关系；`kind` 必须属于 `/relationship-kinds`；PUT 为人工覆盖 |
 | GET/PUT | `/owner` | 当前账号主人档案：`sun_sign` / `mbti` / `quiz_results`；未建档 GET 404 |
 | GET | `/owner/questionnaire` | 主人 MBTI 问卷题面（20 题，四维各 5）；客户端只展示，不算型 |
 | POST | `/owner/questionnaire` | 提交 `answers`；**MBTI 只在 backend 计分**；写入主人档案并返回 `/owner` 对象 |

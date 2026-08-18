@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from pet_common.bond import RELATIONSHIP_KINDS, merge_bond, normalize_kind, public_bond
+from pet_common.bond import RELATIONSHIP_KINDS, catalog, merge_bond, normalize_kind, public_bond
 from pet_common.db import get_session
 from web_api.deps import get_current_claims
 from web_api.owner_service import get_owner_profile
@@ -16,6 +16,7 @@ from web_api.routers.owner import OwnerOut, to_owner_out
 from web_api.routers.persona import PersonaResponse, _to_response
 
 router = APIRouter(prefix="/devices/{device_id}", tags=["profiles"])
+kinds_router = APIRouter(prefix="/relationship-kinds", tags=["profiles"])
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 ClaimsDep = Annotated[dict[str, Any], Depends(get_current_claims)]
 
@@ -38,6 +39,12 @@ class ProfilesOut(BaseModel):
     owner: OwnerOut | None
     pet: PersonaResponse | None
     relationship: BondOut | None
+
+
+@kinds_router.get("")
+async def list_relationship_kinds() -> list[dict[str, str]]:
+    """全部相处关系种类，供 App 直选。无需设备。"""
+    return catalog()
 
 
 def bond_out(raw: object) -> BondOut | None:

@@ -91,6 +91,15 @@ def test_put_relationship_sets_beloved_child(client: TestClient, store: FakeSess
     assert store.profile.bond["kind"] == "beloved_child"
 
 
+def test_list_relationship_kinds(client: TestClient) -> None:
+    response = client.get("/api/relationship-kinds", headers=auth_headers())
+    assert response.status_code == 200
+    kinds = {item["kind"] for item in response.json()}
+    assert "cherished_pet" in kinds
+    assert "tech_buddy" in kinds
+    assert len(kinds) >= 20
+
+
 def test_put_relationship_rejects_unknown_kind(client: TestClient) -> None:
     response = client.put(
         "/api/devices/1/relationship",
