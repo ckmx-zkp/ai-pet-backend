@@ -1,0 +1,19 @@
+docs/09-部署进度与运维.md
+  s_67c66bb0891fc8::t_f360597ae41496 54-59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "01d47f9709ada87d9cd7aae6b4218785a2e3621a",
+  "prompts": {},
+  "sessions": {
+    "s_67c66bb0891fc8": {
+      "agent_id": {
+        "tool": "mock_ai",
+        "id": "ai-thread-1787048023785375200",
+        "model": "unknown"
+      },
+      "human_author": "kunpeng2.zhang <kunpeng2.zhang@ly.com>"
+    }
+  }
+}
