@@ -1,0 +1,24 @@
+.probe_tool_choice.py
+  h_63bd3ffc12fa56 1-64
+.verify_search.py
+  h_63bd3ffc12fa56 1-53
+AGENTS.md
+  h_63bd3ffc12fa56 79-84
+docs/09-部署进度与运维.md
+  h_63bd3ffc12fa56 49-56
+src/agent_worker/llm.py
+  h_63bd3ffc12fa56 126-128,142-143,190-191,204-208
+tests/test_fortune.py
+  h_63bd3ffc12fa56 652-653
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "6150754a65a2c21152a2864252106ced96155df5",
+  "prompts": {},
+  "humans": {
+    "h_63bd3ffc12fa56": {
+      "author": "kunpeng2.zhang <kunpeng2.zhang@ly.com>"
+    }
+  }
+}
