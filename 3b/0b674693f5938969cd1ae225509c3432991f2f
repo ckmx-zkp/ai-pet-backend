@@ -1,0 +1,38 @@
+src/agent_worker/llm.py
+  s_83fea89a0e6e29::t_e74103bf751b21 119-161,163-171,181-182,206-207,209-211
+  s_d186d9daa002d9::t_800b6348579752 215,217-220
+src/pet_common/config.py
+  s_e454dcb13b1450::t_a0220925f46b3c 41-45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "3b0b674693f5938969cd1ae225509c3432991f2f",
+  "prompts": {},
+  "sessions": {
+    "s_83fea89a0e6e29": {
+      "agent_id": {
+        "tool": "mock_ai",
+        "id": "ai-thread-1787047521275459900",
+        "model": "unknown"
+      },
+      "human_author": "kunpeng2.zhang <kunpeng2.zhang@ly.com>"
+    },
+    "s_d186d9daa002d9": {
+      "agent_id": {
+        "tool": "mock_ai",
+        "id": "ai-thread-1787047628860559200",
+        "model": "unknown"
+      },
+      "human_author": "kunpeng2.zhang <kunpeng2.zhang@ly.com>"
+    },
+    "s_e454dcb13b1450": {
+      "agent_id": {
+        "tool": "mock_ai",
+        "id": "ai-thread-1787047593559079500",
+        "model": "unknown"
+      },
+      "human_author": "kunpeng2.zhang <kunpeng2.zhang@ly.com>"
+    }
+  }
+}
