@@ -1,0 +1,14 @@
+docs/09-部署进度与运维.md
+  h_63bd3ffc12fa56 32,40-48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "2a13d2ad0f86db340285e5771ac32585f0a3032a",
+  "prompts": {},
+  "humans": {
+    "h_63bd3ffc12fa56": {
+      "author": "kunpeng2.zhang <kunpeng2.zhang@ly.com>"
+    }
+  }
+}
