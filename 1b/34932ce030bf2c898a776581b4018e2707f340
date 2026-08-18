@@ -1,0 +1,19 @@
+docs/10-后端开发计划.md
+  s_1856acf97e52f0::t_b44b505287032c 23-29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "1b34932ce030bf2c898a776581b4018e2707f340",
+  "prompts": {},
+  "sessions": {
+    "s_1856acf97e52f0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01304-079c-7983-8978-6a0fb9de69a9",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "kunpeng2.zhang <kunpeng2.zhang@ly.com>"
+    }
+  }
+}
