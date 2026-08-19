@@ -1,0 +1,24 @@
+docs/11-设备社交与App数据下发设计.md
+  s_50a069c5b414d1::t_28f15bea74fa9e 58-59,61-63,65-73,96-100,104-106
+  s_50a069c5b414d1::t_c9546119159132 3,11-14,17-35,38-52,54,56-57,112,114,119-123
+docs/06-HTTP-API规范.md
+  s_50a069c5b414d1::t_28f15bea74fa9e 265-280
+  s_50a069c5b414d1::t_a31104997e79ae 303-304
+  s_50a069c5b414d1::t_41cb500d52c732 255-264,281-302
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "4945125f1330f95a5db5ac139c70573409430a64",
+  "prompts": {},
+  "sessions": {
+    "s_50a069c5b414d1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a018a2-a79d-7722-8aae-023b59a77c69",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "kunpeng2.zhang <kunpeng2.zhang@ly.com>"
+    }
+  }
+}
