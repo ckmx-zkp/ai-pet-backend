@@ -1,6 +1,6 @@
 # 11 — 设备社交 与 App 数据下发设计
 
-> 版本：v1.0 · 日期：2026-08-01
+> 版本：v1.1 · 日期：2026-08-19
 > 范围：① 设备间 BLE 社交（好友）；② 设备数据下发 App 的可见性设计。
 > 版本归属：社交 = **V0.3**（docs/01「首版不做社交」修订为 V0.3，见 §1.7）；App 数据下发 = V0.2 已有契约的明确化 + 推送后置。
 
@@ -8,35 +8,69 @@
 
 ## 1. 设备间社交（V0.3）
 
-### 1.1 业务流程
+### 1.1 产品定义与业务流程
+
+该能力用于两只机器人在主人外出时自然偶遇，不是 App/智控台发起的设备配对，也不是
+xiaozhi-server 把两个实时语音会话互桥。完整状态机为：
 
 ```text
-设备A ◄──BLE 社交广播（滚动 token）──► 设备B
-                                         │ 捕获 token
-                                         ▼ MQTT/MCP social.report
-                                    xiaozhi-server
-                                         │ POST /api/internal/social/events
-                                         ▼
-                          backend 解析 token → 认出设备A
-                                         │
-                    记录 B↔A 好友关系 ─────┤
-                                         ▼
-                          返回 A 的公开信息（宠物名+人设摘要）
+设备 A、B 低速 BLE 匿名广播并互相发现
+                │
+                ▼
+其中一只机器人主动唤醒并询问主人是否同意打招呼
+                │
+         ┌──────┴──────┐
+       拒绝             双方主人同意
+  结束且不换 token          │
+                           ▼
+               A、B 通过 BLE 交换短期 social_token
+                           │
+                           ▼
+            双方各自经 xiaozhi-server 上报 peer_token
+                           │
+                           ▼
+       backend 匹配两份报告、生成本次双方要交换的内容
+                           │
+                           ▼
+             两只机器人按受控内容播报并明确结束
 ```
 
-### 1.2 社交 token：滚动码（强制，禁固定码）
+主人同意是硬前置：任一方拒绝或超时，均不得交换 token、不得上报社交事件、不得建立好友。
+前置主动播报属于本地 BLE 偶遇提示，不等于 E11 的远程主动播报能力。
 
-- 绑定设备时 backend 生成 `social_secret` 随绑定响应下发（仅存设备与 backend）。
-- 设备广播 `token = HMAC_SHA256(social_secret, time_slot)` 前 16 字节，**时间槽 10 分钟**，随 slot 滚动。
-- backend 收到捕获 token 后，用候选设备的 secret 重放当前及前 2 个 slot 比对（容忍时钟漂移）；匹配即识别。
-- 效果：广播内容周期性变化，外部嗅探无法关联追踪设备轨迹；仅 backend 可解析。
-- `social_secret` 泄露处理：解绑即失效；重绑生成新 secret。
+### 1.2 BLE 发现与社交 token
 
-### 1.3 上传路径
+- **发现广播与身份 token 分离**：同意前的低速 BLE 广播只携带协议版本、能力位和一次性
+  `discovery_nonce`，不得携带可被 backend 解析为设备身份的 token、设备 UID 或固定标识。
+- 双方主人同意后，设备才交换 `social_token`。token 必须短期有效、不可作为设备登录凭据、
+  不得写日志或展示给用户。
+- `social_token` 继续使用 backend 下发的 `social_secret` 派生滚动码；建议首版为
+  `HMAC_SHA256(social_secret, time_slot)` 前 16 字节，时间槽 10 分钟。backend 只接受当前及
+  有限相邻时间槽，并校验重放与重复报告。
+- `discovery_nonce` 只用于把同一次物理偶遇的双方报告关联起来，不承担身份识别；
+  `social_token` 只用于 backend 解析对端设备，不包含主人账号信息。
+- `social_secret` 仅存设备与 backend；解绑/轮换后旧 token 失效。
 
-设备**不直连** backend（与 docs/08 单通道原则一致）：设备经 MQTT 调 MCP 工具 `social.report` → xiaozhi-server 转发 `POST /api/internal/social/events`（`X-Internal-Token` 鉴权）。防刷：同一 device 上报频率限制（每分钟 ≤10 次，契约中注明）。
+### 1.3 上报、配对与内容生成
 
-### 1.4 数据模型（新增 2 表）
+设备**不直连** backend（与 docs/08 单通道原则一致）。每一侧在交换 token 后，经设备控制通道
+调用 xiaozhi-server 的 `social.encounter.report`，由其转发
+`POST /api/internal/devices/{device_uid}/social/encounter-reports`。首份报告进入 `waiting_peer`，第二份互相匹配后进入
+`generating`；backend 异步生成本次给 A、B 的受控播报内容，完成后状态为 `ready`。
+
+设备按 `report_id` 轮询报告状态和自己的内容，播完后回执 `played`，双方完成或超时后事件进入
+`finished`。内容由 backend 生成，首版禁止把 A 的实时麦克风/助理输出直接注入 B，也禁止机器人
+自由循环对话。生成内容不得包含主人身份、原始 token、内部 Prompt 或未经脱敏的历史。
+
+首版待产品/架构确认的参数：
+
+1. 设备空闲时承载 `social.encounter.report` 与结果轮询的控制通道（独立 MQTTS/控制 WS，还是
+   其他已有常驻通道）。语音 WS 已断开时不能假设可直接轮询。
+2. backend 每次生成几段内容、双方最大播报轮数和总时长。
+3. 播放完成/失败回执粒度，以及一方离线时另一方的收尾文案。
+4. 双方同意如何在 BLE 协议中互相确认，避免单边同意即交换 token。
+
+### 1.4 数据模型（目标态）
 
 **`device_social_keys`**（一设备一行）
 
@@ -59,26 +93,34 @@
 
 好友信息**不冗余存储**，展示时 join `devices`（宠物名）+ `persona_profiles`（人设摘要）。
 
-### 1.5 API（契约待并入 docs/06）
+正式实现还需新增偶遇事件与单侧报告数据，用于幂等配对、生成状态、超时和播放回执；字段在
+实现前随迁移设计确定，但至少包含 `report_id`、`encounter_id`、双方设备、`discovery_nonce`、
+token 指纹、状态、生成内容引用和时间戳。原始 `social_token` 不落库，只保存不可逆指纹或解析结果。
+
+### 1.5 API（草案已并入 docs/06，开发前再冻结 schema）
 
 | 端点 | 用途 |
 |------|------|
-| `POST /api/internal/social/events` | 小智转发：{device_id, token, ts} → 解析、记好友、返回对方公开信息 |
+| `POST /api/internal/devices/{device_uid}/social/encounter-reports` | 小智转发单侧同意后的偶遇报告；返回 `report_id` 与状态 |
+| `GET /api/internal/devices/{device_uid}/social/encounter-reports/{report_id}` | 查询匹配/生成状态；ready 时只返回该设备可播放内容 |
+| `POST /api/internal/devices/{device_uid}/social/encounter-reports/{report_id}/ack` | 回执 played/failed，幂等结束本侧流程 |
 | `GET /devices/{id}/friends` | 好友列表（宠物名、人设摘要、last_met_at、meet_count），统一分页 |
 | `DELETE /devices/{id}/friends/{fid}` | 删除好友（隐私删除权） |
 
 ### 1.6 隐私红线
 
-- 广播内容与返回信息**只含宠物名 + 人设摘要**，绝不含主人账号信息。
+- 同意前广播不含身份 token；生成内容与好友信息绝不含主人账号信息。
 - `social_enabled` 默认关；开启/关闭写 audit_logs。
+- 主人拒绝/超时不得留下好友关系或可识别的社交事件；token 与生成正文不进日志。
 - 好友关系对用户可见、可删；解绑设备时其 `device_social_keys` 行删除、friendships 置 blocked。
 
 ### 1.7 前置依赖与排期
 
-- 固件：BLE 广播/扫描（未开发）——因此社交无法早于 V0.3 联调
-- backend：表迁移 + 3 端点 + 绑定流程下发 secret（docs/10 记为 **E9**）
-- xiaozhi-server：`social.report` MCP 工具转发
-- **现在就要做的**：E2 前的某次迁移中把两表建掉（成本低），绑定响应预留 `social_secret` 字段——避免已绑定设备将来补发密钥
+- 固件：低速 BLE 匿名发现、主人同意状态机、同意后 token 交换均未开发。
+- backend：偶遇报告/匹配/内容生成/回执模型与端点未实现（docs/10 仍归 **E9**）。
+- xiaozhi-server：控制通道与 `social.encounter.report` 转发未实现；不承担实时会话桥。
+- 开工顺序：先冻结 BLE 包格式、双边同意与控制通道，再冻结 docs/06 schema，随后按
+  固件 → xiaozhi-server → backend 联调。当前只可做协议 spike 和内容生成离线原型，不可宣称可用。
 
 ---
 

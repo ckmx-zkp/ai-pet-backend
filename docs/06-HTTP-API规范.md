@@ -252,6 +252,56 @@ null，不回退宠物星座）。未录入八字时 `bazi_fortune` 为 null；�
 `birth_time` / `birth_place` 可空：无时辰或无法解析地点时不算上升。生辰只用于当次计算，
 日志不记。响应为各星体的 `sign` + `degree_in_sign` + 一句解读 + `share_card`。
 
+## BLE 偶遇社交（E9，草案，设计见 docs/11）
+
+该能力由设备在户外通过低速 BLE 自然发现触发。主人同意前只允许匿名发现广播；双方主人同意后
+才交换短期 `social_token` 并各自上报。backend 负责匹配两份报告并异步生成本次双方要播放的
+受控内容；xiaozhi-server 只负责控制通道与 HTTP 转发，不做两个实时语音会话的桥接。
+
+以下 schema 是跨仓联调草案，需在 BLE 包格式、双边同意和空闲设备控制通道确定后再冻结并实现：
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/internal/devices/{device_uid}/social/encounter-reports` | 单侧上报同意后的偶遇；幂等返回 `report_id` |
+| GET | `/api/internal/devices/{device_uid}/social/encounter-reports/{report_id}` | 查询 waiting_peer/generating/ready/finished/expired |
+| POST | `/api/internal/devices/{device_uid}/social/encounter-reports/{report_id}/ack` | 本侧播放回执 `played|failed` |
+
+### `POST /api/internal/devices/{device_uid}/social/encounter-reports` 草案
+
+```json
+{
+  "discovery_nonce": "base64url-random-nonce",
+  "peer_token": "base64url-short-lived-token",
+  "consented_at": "2026-08-19T12:00:00Z",
+  "observed_at": "2026-08-19T12:00:01Z"
+}
+```
+
+路径中的 `device_uid` 由 xiaozhi-server 从可信设备连接上下文注入，body 不接受设备自报身份。服务端必须校验：设备已开启社交、token 在允许时间槽内、报告时间窗有效、同一
+`device_uid + discovery_nonce + peer_token` 幂等、双方报告能互相解析。原始 token 不落库、不进
+日志；返回 `{"report_id":"...","status":"waiting_peer|generating|ready"}`。
+
+### 报告查询草案
+
+`ready` 时只返回当前 `device_uid` 可播放的内容，不返回对端 token、主人信息、内部 Prompt 或
+对端私有上下文：
+
+```json
+{
+  "report_id": "...",
+  "encounter_id": "...",
+  "status": "ready",
+  "items": [
+    {"item_id": "...", "order": 1, "text": "本次由 backend 生成的播报内容"}
+  ],
+  "expires_at": "2026-08-19T12:10:00Z"
+}
+```
+
+报告归属必须由服务端 token 和路径对应的设备身份共同校验，禁止凭 `report_id` 越权读取。
+生成失败、对侧缺报或任一侧超时必须进入明确终态，设备播放本地安全收尾文案。内容段数、最大轮数、
+总时长和空闲设备下行通道仍为待决项，确定前不得实现为自由实时对聊。
+
 ## 主动播报（E11，设计见 docs/13）
 
 | 方法 | 路径 | 说明 |
@@ -320,7 +370,6 @@ null，不回退宠物星座）。未录入八字时 `bazi_fortune` 为 null；�
 
 ```json
 {
-  "device_uid": "aa:bb:cc:dd:ee:ff",
   "session_id": "sess-e3-test-001",
   "role": "user | assistant",
   "content": "...",
