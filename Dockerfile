@@ -16,6 +16,10 @@ RUN python -m venv /opt/venv \
 
 FROM python:3.12-slim AS runtime
 
+ARG VCS_REF=unknown
+LABEL org.opencontainers.image.revision=$VCS_REF
+RUN printf '%s\n' "$VCS_REF" > /app-revision
+
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

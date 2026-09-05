@@ -53,6 +53,7 @@ services:
 
   web-api:
     build: .
+    image: ai-pet-backend:local
     restart: unless-stopped
     environment:
       APP_SERVICE: web-api
@@ -78,6 +79,7 @@ services:
 
   memory-mcp:
     build: .
+    image: ai-pet-backend:local
     restart: unless-stopped
     environment:
       APP_SERVICE: memory-mcp
@@ -102,6 +104,7 @@ services:
 
   agent-worker:
     build: .
+    image: ai-pet-backend:local
     restart: unless-stopped
     environment:
       APP_SERVICE: agent-worker
