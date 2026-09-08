@@ -12,6 +12,7 @@ from web_api.routers import (
     admin_devices,
     analyses,
     auth,
+    companion,
     devices,
     fortune,
     internal,
@@ -64,15 +65,17 @@ def create_app() -> FastAPI:
     # 管理台路由：JWT + admin 角色
     app.include_router(admin.router, prefix="/api", dependencies=[Depends(require_admin)])
     app.include_router(admin.ops_router, prefix="/api", dependencies=[Depends(require_admin)])
-    app.include_router(
-        admin_devices.router, prefix="/api", dependencies=[Depends(require_admin)]
-    )
+    app.include_router(admin_devices.router, prefix="/api", dependencies=[Depends(require_admin)])
 
     # 服务间路由：内部 token，最终路径为 /api/internal/*。
     app.include_router(
         internal.router, prefix="/api", dependencies=[Depends(require_internal_token)]
     )
 
+    app.include_router(
+        companion.router, prefix="/api", dependencies=[Depends(require_internal_token)]
+    )
+    app.include_router(companion.user_router, prefix="/api", dependencies=user_dep)
     return app
 
 

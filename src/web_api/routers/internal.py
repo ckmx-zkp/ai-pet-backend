@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field, StringConstraints
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from pet_common.config import get_settings
 from pet_common.db import get_session
 from pet_common.models import (
     AgentTask,
@@ -192,6 +193,10 @@ async def build_device_context(session: AsyncSession, device: Device) -> list[st
     for memory in memories:
         title = f"{memory.title}：" if memory.title else ""
         items.append(f"你记得{title}{memory.content}")
+    if get_settings().companion_enabled:
+        from web_api.routers.companion import followup_context
+
+        items[0:0] = await followup_context(session, device)
     return _bounded_context(items)
 
 

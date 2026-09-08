@@ -1,5 +1,16 @@
 # 06 — HTTP API 规范
 
+## 人格化陪伴接口（2026-09-08，契约先行）
+
+- 内部基址 /api/internal/companion/devices/{device_uid}，必须X-Internal-Token；设备必须存在且已认领，否则404。所有查询同时约束device_id及当前user_id，隔离重绑前资料。
+- GET /context?q=主题：返回owner（仅sun_sign/mbti）、pet（sun_sign/mbti/dossier）、relationship、approved_preferences、相关active memories、due_followups；不返回账号凭据、生辰原值、完整历史。未配置人格返回空字段，不编造。q<=200，记忆最多5，批准偏好最多20条候选扫描，约定最多3条。
+- POST /feedback：{preference,value,evidence}，支持reply_length(short/medium/long)、support_style(listen/advice/balanced)、question_frequency(none/one)、tone(gentle/direct/playful)。写source=agent/status=candidate的Memory，脱敏evidence；同设备同主人相同反馈串行去重。经既有用户记忆approve批准才纳入策略，不改星座或MBTI。
+- POST /followups：{request_id,topic,due_at}，请求号用于同设备/主人幂等。due_at必须带时区，未来且不超过90天；保存脱敏主题，7天过期窗口，不承诺离线叫醒。GET /followups?status=pending&limit=20&offset=0有界列表。
+- PATCH /followups/{id}：{status:completed|cancelled}，同终态幂等，不同终态409；操作限定当前主人/设备。GET /context在东八区08:00至21:00返回到期未过期pending约定，不自动完成，不影响夜间安静。
+- 新增companion_followups表，索引与迁移见0013；反馈沿用memories，不新增人格身份副本。用户端GET/PATCH /api/devices/{device_id}/followups提供同等列表/完成/取消能力，JWT归属鉴权。
+- 动态上下文C5可在companion_enabled开启时附加一条到期约定（有界），仅供合适会话带出，传输唤醒E11保持冻结。
+
+
 > 所有下列路径均为最终路径。鉴权：用户 JWT；`/api/internal/*` 服务间 token。
 > 字段名实现时可微调，路径语义保持。
 

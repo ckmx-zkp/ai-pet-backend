@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     fortune_search_model: str = "MiniMax-M3"
 
     worker_poll_interval_seconds: float = 2.0
+    companion_enabled: bool = False
 
     # Memory MCP is stdio in local tooling and streamable HTTP in deployment.
     memory_mcp_transport: str = "stdio"
