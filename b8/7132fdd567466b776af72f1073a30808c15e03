@@ -1,0 +1,19 @@
+docs/09-部署进度与运维.md
+  s_c40701e4446788::t_b827e74698a4c5 3-10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "b87132fdd567466b776af72f1073a30808c15e03",
+  "prompts": {},
+  "sessions": {
+    "s_c40701e4446788": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07ffe-a000-7941-a7d8-d40f3c0f5962",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "kunpeng2.zhang <kunpeng2.zhang@ly.com>"
+    }
+  }
+}
