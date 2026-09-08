@@ -1,6 +1,7 @@
 # 06 — HTTP API 规范
 
 ## 人格化陪伴接口（2026-09-08，契约先行）
+小智云数字分身使用独立普通用户及虚拟设备身份，与宠物数据隔离。云端记忆工具固定注入该身份；memory.search/forget同时限制设备及当前主人，memory.add脱敏后只保存candidate。情绪支持只按用户当下自述调整回复，不自动持久化情绪诊断。
 
 - 内部基址 /api/internal/companion/devices/{device_uid}，必须X-Internal-Token；设备必须存在且已认领，否则404。所有查询同时约束device_id及当前user_id，隔离重绑前资料。
 - GET /context?q=主题：返回owner（仅sun_sign/mbti）、pet（sun_sign/mbti/dossier）、relationship、approved_preferences、相关active memories、due_followups；不返回账号凭据、生辰原值、完整历史。未配置人格返回空字段，不编造。q<=200，记忆最多5，批准偏好最多20条候选扫描，约定最多3条。

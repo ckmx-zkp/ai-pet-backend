@@ -107,6 +107,19 @@ async def main():
         assert (
             await client.get(f"/api/devices/{did}/followups", headers=user_headers)
         ).status_code in (403, 404)
+    from memory_mcp.server import memory_add, memory_forget, memory_search
+
+    found = await memory_search("companion-test-device", "")
+    assert mid not in {item["id"] for item in found["items"]}
+    assert (await memory_forget("companion-test-device", mid))["status"] == "not_found"
+    created = await memory_add(
+        "companion-test-device", "测试记忆", "电话13800138000", status="active"
+    )
+    assert created["status"] == "candidate"
+    async with get_session_factory()() as session:
+        saved = await session.get(Memory, created["id"])
+        assert saved is not None and "13800138000" not in saved.content
+    assert (await memory_forget("companion-test-device", created["id"]))["status"] == "archived"
     await get_engine().dispose()
     print(
         "PASS: real PostgreSQL migration, auth, approval, idempotency, terminal state, owner isolation"

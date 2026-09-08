@@ -18,6 +18,7 @@ from pet_common.config import get_settings
 from pet_common.db import get_session_factory
 from pet_common.logging import configure_logging
 from pet_common.models import AgentTask, AuditLog, Device, Memory
+from pet_common.redaction import redact_text
 
 settings = get_settings()
 mcp = FastMCP(
@@ -31,7 +32,7 @@ mcp = FastMCP(
 
 async def _find_device(session: Any, device_uid: str) -> Device | None:
     result: Device | None = await session.scalar(
-        select(Device).where(Device.device_uid == device_uid.strip().lower())
+        select(Device).where(Device.device_uid == device_uid.strip().lower()).with_for_update()
     )
     return result
 
@@ -61,7 +62,11 @@ async def memory_search(
         device = await _find_device(session, device_uid)
         if device is None or device.user_id is None:
             return {"items": []}
-        statement = select(Memory).where(Memory.device_id == device.id, Memory.status == "active")
+        statement = select(Memory).where(
+            Memory.device_id == device.id,
+            Memory.user_id == device.user_id,
+            Memory.status == "active",
+        )
         if query.strip():
             pattern = f"%{query.strip()}%"
             statement = statement.where(
@@ -103,8 +108,8 @@ async def memory_add(
         row = Memory(
             device_id=device.id,
             user_id=device.user_id,
-            title=title[:200],
-            content=content[:4000],
+            title=redact_text(title[:200]),
+            content=redact_text(content[:4000]),
             tags=(tags or [])[:20],
             source="agent",
             status="candidate" if status != "candidate" else status,
@@ -133,7 +138,11 @@ async def memory_forget(device_uid: str, memory_id: int) -> dict[str, Any]:
         if device is None or device.user_id is None:
             return {"status": "not_found"}
         row = await session.scalar(
-            select(Memory).where(Memory.id == memory_id, Memory.device_id == device.id)
+            select(Memory).where(
+                Memory.id == memory_id,
+                Memory.device_id == device.id,
+                Memory.user_id == device.user_id,
+            )
         )
         if row is None:
             return {"status": "not_found"}
