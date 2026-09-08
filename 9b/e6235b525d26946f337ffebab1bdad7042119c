@@ -1,0 +1,23 @@
+scripts/verify_companion_db.py
+  s_c40701e4446788::t_edb8a84ef1a220 110-122
+docs/06-HTTP-API规范.md
+  s_c40701e4446788::t_9fc48a9389688e 4
+src/memory_mcp/server.py
+  s_c40701e4446788::t_9fc48a9389688e 21,35,65-69,111-112,141-145
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "9be6235b525d26946f337ffebab1bdad7042119c",
+  "prompts": {},
+  "sessions": {
+    "s_c40701e4446788": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07ffe-a000-7941-a7d8-d40f3c0f5962",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "kunpeng2.zhang <kunpeng2.zhang@ly.com>"
+    }
+  }
+}
