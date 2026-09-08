@@ -144,7 +144,10 @@ async def get_context(
         ).all()
     )
     statement = select(Memory).where(
-        Memory.device_id == device.id, Memory.user_id == device.user_id, Memory.status == "active"
+        Memory.device_id == device.id,
+        Memory.user_id == device.user_id,
+        Memory.status == "active",
+        ~Memory.tags.contains(["companion_preference"]),
     )
     if q.strip():
         # 搜索词作为字面量，避免通配符扩大召回。

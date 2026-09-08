@@ -152,6 +152,8 @@ async def review_memory(
     if outcome == "active":
         await enqueue_memory_profile(session, device_id, "approve")
     await session.commit()
+    # updated_at 是服务端 onupdate，异步序列化前必须显式刷新。
+    await session.refresh(row)
     return _out(row)
 
 
