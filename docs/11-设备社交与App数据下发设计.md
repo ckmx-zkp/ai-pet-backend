@@ -196,3 +196,7 @@ xiaozhi-server 缓存 persona_pack → 注入 system prompt → 设备按此人�
 - **backend**：问卷算型、persona 存储、编译、persona_pack 下发
 - **小智**：拉取 + 缓存 + 注入，不理解人设内容
 - **固件**：零参与（default_emotion 经小智 MCP 控眼下达到眼睛）
+
+## 2026-11-17 单机联调增量
+
+用户授权开发单实体机 + 云端模拟方测试模式。契约已变更，以 backend docs/06「单实体机 + 云端模拟方测试契约」为准；不解除正式 BLE/双边同意/空闲通道阻塞，不登记完整 E9 已完成。

@@ -24,6 +24,7 @@ from web_api.routers import (
     persona,
     profiles,
     quizzes,
+    social_test,
 )
 
 
@@ -76,6 +77,9 @@ def create_app() -> FastAPI:
         companion.router, prefix="/api", dependencies=[Depends(require_internal_token)]
     )
     app.include_router(companion.user_router, prefix="/api", dependencies=user_dep)
+    app.include_router(
+        social_test.router, prefix="/api", dependencies=[Depends(require_internal_token)]
+    )
     return app
 
 

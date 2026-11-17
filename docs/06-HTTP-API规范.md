@@ -433,3 +433,15 @@ body 支持单条对象或对象数组（批量）。**脱敏由 backend 落库�
 - `409` 冲突（device_uid 绑定冲突、KB 发布版本冲突）  
 - `422` 校验失败  
 - `503` 依赖降级（编译临时失败等）  
+
+## 2026-11-17 单实体机 + 云端模拟方测试契约（E9 测试子集）
+
+用户授权在仅一台实体机条件下开发测试。此模式显式跳过 BLE 发现和真实第二位主人同意，不产生好友、偶遇报告或正式社交记录。只能由持有内部服务令牌的操作员创建，`SOCIAL_TEST_ENABLED` 默认 false。仅测试既有语音 WS 在线场景，不作为空闲控制通道已实现的证据。
+
+- backend 提供内存测试房间（单 web-api 进程，重启丢失），最多 32 个、180 秒有效，预置八段台词（雾星：INFP/天蝎座，喜欢独处、渴望交友），real/virtual 交替；内容仅测试文本，不读取主人档案。
+- `POST /api/internal/social/test-rooms`：body `device_uid`（真实设备 MAC）、`consented:true`；返回 room_id、device_uid、status、next_turn 和 expires_at。虚拟身份固定为 `simulated-peer`，不得注册为普通宠物或写入聊天/记忆。
+- `GET /api/internal/social/test-rooms/{room_id}`：取状态；`POST .../{room_id}/ack` body `turn_id`、`speaker:real|virtual`、`result:played|simulated|failed`。real 仅接受 played，virtual 仅接受 simulated；必须按序，重复同一回执幂等，冲突 409，失败进入 failed。`POST .../{room_id}/cancel` 结束。全部要求 X-Internal-Token，开关关闭为 404；过期终态 expired。
+- xiaozhi `POST /internal/social/test/start`（X-Server-Secret）：body 同上；仅接受明确声明 `features.social_test_v1=true` 的已绑定在线设备，冲突/忙碌返回 409。`GET /internal/social/test/{room_id}` 查询，`POST .../{room_id}/cancel` 取消。每设备最多一房间，不能插入普通对话或音乐播放。
+- WS 下行 `type:social_test,state:start|turn|end,room_id,turn_id`。start 后实体机暂停麦克风上传并回复 `type:social_test,state:ready,room_id`；turn 指定本轮，实体机在收到 TTS stop 且本地音频队列完全播放后回复 `state:played,room_id,turn_id`。上行身份只取已认证连接，不能由 body 指定。
+- start/turn 回执分别 5/30 秒超时；虚拟轮次由云端明确记 simulated，不能冒充实际扬声器播放。任何超时、断线、取消均停止调度，恢复普通收音；实体机本地 180 秒看门狗兜底，按 BOOT 可退出。测试期间服务器丢弃普通音频/识别输入；不依赖声纹识别人机。
+- 四轮八段台词暂固定用于验证身份、轮次和真实播放回执；人设驱动生成、蓝牙及双实体机声学验证后续单列。
