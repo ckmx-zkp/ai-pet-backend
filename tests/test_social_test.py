@@ -43,3 +43,24 @@ def test_timeout_failure_and_busy() -> None:
     expired = store.create(room.device_uid)
     expired.created_at -= 181
     assert store.get(expired.room_id).status == "expired"
+
+
+def test_two_real_actors_cannot_fake_or_overlap() -> None:
+    store = RoomStore()
+    uid, peer = "d8:85:ac:bb:b0:80", "d8:85:ac:ba:85:d0"
+    room = store.create(uid, peer)
+    assert store.view(room)["peer_kind"] == "real"
+    with pytest.raises(RoomError):
+        store.create(peer)
+    with pytest.raises(RoomError):
+        store.create(uid, uid)
+    with pytest.raises(RoomError):
+        store.ack(room.room_id, "1", "peer", "played", uid)
+    with pytest.raises(RoomError):
+        store.ack(room.room_id, "1", "peer", "simulated", peer)
+    for i in range(1, 9):
+        role = "peer" if i % 2 else "real"
+        actor = peer if i % 2 else uid
+        store.ack(room.room_id, str(i), role, "played", actor)
+    assert room.status == "finished"
+    assert len(room.receipts) == 8

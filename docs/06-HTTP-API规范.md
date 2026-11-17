@@ -445,3 +445,9 @@ body 支持单条对象或对象数组（批量）。**脱敏由 backend 落库�
 - WS 下行 `type:social_test,state:start|turn|end,room_id,turn_id`。start 后实体机暂停麦克风上传并回复 `type:social_test,state:ready,room_id`；turn 指定本轮，实体机在收到 TTS stop 且本地音频队列完全播放后回复 `state:played,room_id,turn_id`。上行身份只取已认证连接，不能由 body 指定。
 - start/turn 回执分别 5/30 秒超时；虚拟轮次由云端明确记 simulated，不能冒充实际扬声器播放。任何超时、断线、取消均停止调度，恢复普通收音；实体机本地 180 秒看门狗兜底，按 BOOT 可退出。测试期间服务器丢弃普通音频/识别输入；不依赖声纹识别人机。
 - 四轮八段台词暂固定用于验证身份、轮次和真实播放回执；人设驱动生成、蓝牙及双实体机声学验证后续单列。
+
+## 2026-11-17 双实体机测试扩展
+
+用户已授权 COM7 与 COM25 真机对话。测试房间 create/start 增加可选 peer_device_uid，必须为与 device_uid 不同的已认证在线设备；COM25=d8:85:ac:ba:85:d0（雾星），COM7=d8:85:ac:bb:b0:80。未指定 peer 时保留原模拟模式。指定 peer 时 peer_kind=real，speaker 为 peer/real，next_turn 带可信 device_uid；回执增加 actor_device_uid，必须匹配 speaker 对应设备，双方只能报 played/failed，禁止 simulated。两设备互斥占用，不能参与其他房间。
+
+双实体机均 ready 后才开始；按 backend docs/双机对话脚本-COM25雾星-COM7-2026-11-17.md 四轮八段台词，COM25 先发言。两侧测试全程停普通收音，每段只有发言侧的播放排空回执解锁下一轮，间隔 500ms。任一方断线、BOOT 或超时停止全房间，结束后恢复双方普通语音。此为在线运维测试，不包含 BLE 自动发现。

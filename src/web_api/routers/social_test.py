@@ -22,18 +22,20 @@ router = APIRouter(prefix="/internal/social/test-rooms", dependencies=[Depends(e
 class CreateRoom(BaseModel):
     device_uid: str = Field(pattern=r"^[0-9a-f]{2}(:[0-9a-f]{2}){5}$")
     consented: Literal[True]
+    peer_device_uid: str | None = Field(default=None, pattern=r"^[0-9a-f]{2}(:[0-9a-f]{2}){5}$")
 
 
 class Receipt(BaseModel):
     turn_id: str = Field(pattern=r"^[1-8]$")
-    speaker: Literal["real", "virtual"]
+    speaker: Literal["real", "virtual", "peer"]
     result: Literal["played", "simulated", "failed"]
+    actor_device_uid: str | None = Field(default=None, pattern=r"^[0-9a-f]{2}(:[0-9a-f]{2}){5}$")
 
 
 @router.post("")
 async def create(body: CreateRoom) -> dict[str, object]:
     try:
-        return store.view(store.create(body.device_uid))
+        return store.view(store.create(body.device_uid, body.peer_device_uid))
     except RoomError as exc:
         raise HTTPException(exc.status, exc.detail) from exc
 
@@ -49,7 +51,9 @@ async def get(room_id: str) -> dict[str, object]:
 @router.post("/{room_id}/ack")
 async def ack(room_id: str, body: Receipt) -> dict[str, object]:
     try:
-        return store.view(store.ack(room_id, body.turn_id, body.speaker, body.result))
+        return store.view(store.ack(
+            room_id, body.turn_id, body.speaker, body.result, body.actor_device_uid
+        ))
     except RoomError as exc:
         raise HTTPException(exc.status, exc.detail) from exc
 
