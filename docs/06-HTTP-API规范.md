@@ -451,3 +451,7 @@ body 支持单条对象或对象数组（批量）。**脱敏由 backend 落库�
 用户已授权 COM7 与 COM25 真机对话。测试房间 create/start 增加可选 peer_device_uid，必须为与 device_uid 不同的已认证在线设备；COM25=d8:85:ac:ba:85:d0（雾星），COM7=d8:85:ac:bb:b0:80。未指定 peer 时保留原模拟模式。指定 peer 时 peer_kind=real，speaker 为 peer/real，next_turn 带可信 device_uid；回执增加 actor_device_uid，必须匹配 speaker 对应设备，双方只能报 played/failed，禁止 simulated。两设备互斥占用，不能参与其他房间。
 
 双实体机均 ready 后才开始；按 backend docs/双机对话脚本-COM25雾星-COM7-2026-11-17.md 四轮八段台词，COM25 先发言。两侧测试全程停普通收音，每段只有发言侧的播放排空回执解锁下一轮，间隔 500ms。任一方断线、BOOT 或超时停止全房间，结束后恢复双方普通语音。此为在线运维测试，不包含 BLE 自动发现。
+
+## 2026-11-17 靠近记录与触摸彩虹需求修订（尚未实现）
+
+靠近先通过 BLE 读取公开玩偶名片并仅在本地记录新玩偶。正式版要求双方触摸确认，然后双方 RGB 各闪一轮彩虹再开始。当前 COM25 无触摸按键，仅 COM7 触摸和彩虹一轮，COM25 以限定测试策略加入。设备级入场、匹配、反馈完成消息尚未冻结；当前运维测试接口不变。实现分析见固件 docs/BLE遇见记录与触摸彩虹启动方案-2026-11-17.md。
